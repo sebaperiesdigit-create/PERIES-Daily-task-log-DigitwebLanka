@@ -1,0 +1,22 @@
+*** DRAFT ACKNOWLEDGEMENT - NOT SENT ***
+*** Sender and wording approved 2026-09-03. Still not sent: live Gmail sending is not activated. ***
+
+To: Test Requester C <test.requester.c@example-welfare.test>
+From: Digitweb Lanka Welfare Society <welfaredw@gmail.com>
+Thread ID: fixture-msg-0004
+In reply to (source message ID): fixture-msg-0004
+Subject: Re: Personal Loan Request <urgent>
+
+Dear Test & <Requester> "C",
+
+We have received your welfare loan request with the following details:
+
+Date: 2026-08-23
+Amount: LKR 20,000
+Reason: my son's school fees & <priority> books
+Loan Type: Personal
+
+Your request has been received by Digitweb Lanka Welfare Society and will be processed according to the welfare society procedure. This acknowledgement confirms receipt only and is not loan approval.
+
+Regards,
+Digitweb Lanka Welfare Society

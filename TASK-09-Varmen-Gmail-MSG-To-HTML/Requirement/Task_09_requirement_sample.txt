@@ -1,0 +1,21 @@
+enakku vanthu our automation seyanum
+ 
+engada welfarescoilt mails varum loan request 
+antha data oru html table la show aaganum 
+date ,yaar kettathu,avala amount,enna reason, loan type, apdi vara mail ellam oru html table la update aaganum unaglukku p[iragu  db thevapatta   apiramita kelunga varmen db tharuvangal
+ 
+vara mail la orunthu fill aganum 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+itha seingatoday  
+ 
+gmail messeg to html endu kudunga task
+ 
+user enna kudunga 
+ 
+ 

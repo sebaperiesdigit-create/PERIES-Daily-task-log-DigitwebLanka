@@ -1,0 +1,9 @@
+{
+  "id": "fixture-msg-0007",
+  "threadId": "fixture-msg-0007",
+  "from": "Test Requester G <test.requester.g@example-welfare.test>",
+  "to": "welfarescoilt@example.test",
+  "subject": "Personal Loan Request",
+  "receivedAt": "2026-08-27T09:00:00+05:30",
+  "bodyText": "Dear Welfare Team,\r\n\r\nI need a loan due to medical bills. I am considering either a loan of 50000 or a loan of 75000, whichever is easier to approve.\r\n\r\nKind regards,\r\nTest Requester G\r\n"
+}

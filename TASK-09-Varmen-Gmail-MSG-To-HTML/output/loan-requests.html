@@ -1,0 +1,366 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Welfare Loan Requests</title>
+<style>
+  :root {
+    color-scheme: light;
+    /* Chrome & ink - from the validated reference palette (light surface set). */
+    --page-bg: #f9f9f7;
+    --surface: #fcfcfb;
+    --text-primary: #0b0b0b;
+    --text-secondary: #52514e;
+    --text-muted: #898781;
+    --gridline: #e1e0d9;
+    --hairline: rgba(11, 11, 11, 0.10);
+    --shadow: 0 1px 2px rgba(11, 11, 11, 0.04), 0 4px 12px rgba(11, 11, 11, 0.05);
+
+    /* Accent (kept as the existing navy, refined) - used for the table header
+       and Loan Type badges. Not a categorical/status color; one fixed hue. */
+    --accent: #1f3a5f;
+    --accent-muted: #5a7392; /* lighter step of the same navy - secondary table header */
+    --accent-tint: #e7edf4;
+    --accent-fg: #ffffff;
+
+    /* Status "warning" - reserved, used only for the awaiting-review signal,
+       always paired with an icon + text label, never carrying meaning alone. */
+    --status-warning: #fab219;
+    --status-warning-ink: #8a5a05;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    padding: 2rem 1.5rem 3rem;
+    background: var(--page-bg);
+    color: var(--text-primary);
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  }
+  .page { max-width: 100rem; margin: 0 auto; }
+  h1 { font-size: 1.5rem; font-weight: 700; margin: 0 0 0.3rem; letter-spacing: -0.01em; }
+  .subtitle { color: var(--text-secondary); margin: 0 0 1.5rem; font-size: 0.9rem; }
+
+  .stat-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.9rem;
+    margin-bottom: 1.75rem;
+  }
+  .stat-tile {
+    background: var(--surface);
+    border: 1px solid var(--hairline);
+    border-radius: 12px;
+    box-shadow: var(--shadow);
+    padding: 0.9rem 1.25rem;
+    min-width: 11rem;
+  }
+  .stat-tile .value {
+    font-size: 1.75rem;
+    font-weight: 700;
+    color: var(--text-primary);
+    line-height: 1.15;
+  }
+  .stat-tile .label {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    margin-top: 0.15rem;
+    font-size: 0.82rem;
+    color: var(--text-secondary);
+  }
+  .stat-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--status-warning);
+    flex: none;
+  }
+
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--hairline);
+    border-radius: 12px;
+    box-shadow: var(--shadow);
+    overflow: hidden;
+  }
+  .table-wrap { overflow-x: auto; }
+  table {
+    border-collapse: collapse;
+    width: 100%;
+    min-width: 36rem;
+    font-size: 0.92rem;
+  }
+  caption {
+    text-align: left;
+    font-weight: 600;
+    padding: 0.9rem 1rem 0.6rem;
+    color: var(--text-primary);
+  }
+  th, td {
+    border-bottom: 1px solid var(--gridline);
+    padding: 0.65rem 1rem;
+    text-align: left;
+    vertical-align: top;
+  }
+  td.num { font-variant-numeric: tabular-nums; }
+  thead th {
+    background: var(--accent);
+    color: var(--accent-fg);
+    font-weight: 600;
+    font-size: 0.82rem;
+    text-transform: uppercase;
+    letter-spacing: 0.02em;
+    position: sticky;
+    top: 0;
+    border-bottom: none;
+  }
+  tbody tr:hover { background: var(--accent-tint); }
+  tbody tr:last-child td { border-bottom: none; }
+  .empty-row td { text-align: center; color: var(--text-muted); font-style: italic; }
+
+  .badge {
+    display: inline-block;
+    background: var(--accent-tint);
+    color: var(--accent);
+    border: 1px solid var(--hairline);
+    border-radius: 999px;
+    padding: 0.15rem 0.6rem;
+    font-size: 0.8rem;
+    font-weight: 600;
+    white-space: nowrap;
+  }
+
+  section.review { margin-top: 2rem; }
+  section.review .card {
+    background: var(--page-bg);
+    box-shadow: none;
+  }
+  section.review .note {
+    margin: 0;
+    padding: 0.75rem 1rem;
+    font-size: 0.82rem;
+    color: var(--text-secondary);
+    border-bottom: 1px solid var(--gridline);
+  }
+  section.review caption { color: var(--text-secondary); font-size: 0.9rem; }
+  section.review thead th {
+    background: var(--accent-muted);
+    color: var(--accent-fg);
+    font-weight: 600;
+    font-size: 0.82rem;
+    text-transform: uppercase;
+    letter-spacing: 0.02em;
+    border-bottom: none;
+  }
+  section.review td { color: var(--text-secondary); font-size: 0.88rem; }
+  section.review table { min-width: 46rem; }
+  section.review tbody tr:hover { background: rgba(11, 11, 11, 0.035); }
+  section.review tbody tr:last-child td { border-bottom: none; }
+  section.review .muted-inline { color: var(--text-muted); font-size: 0.8rem; }
+  section.review .open-link {
+    color: var(--accent);
+    font-weight: 600;
+    font-size: 0.82rem;
+    text-decoration: none;
+  }
+  section.review .open-link:hover { text-decoration: underline; }
+
+  .chip {
+    display: inline-block;
+    background: var(--surface);
+    border: 1px solid var(--gridline);
+    border-radius: 6px;
+    padding: 0.1rem 0.45rem;
+    font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+    font-size: 0.78rem;
+    color: var(--text-secondary);
+  }
+  .status-badge {
+    display: inline-block;
+    background: #fdf1da;
+    color: var(--status-warning-ink);
+    border: 1px solid rgba(250, 178, 25, 0.4);
+    border-radius: 999px;
+    padding: 0.1rem 0.55rem;
+    font-size: 0.74rem;
+    font-weight: 600;
+    margin-right: 0.4rem;
+    white-space: nowrap;
+  }
+  .status-neutral, .status-scheduled {
+    display: inline-block;
+    border-radius: 999px;
+    padding: 0.15rem 0.6rem;
+    font-size: 0.8rem;
+    font-weight: 600;
+    white-space: nowrap;
+  }
+  .status-neutral {
+    background: var(--gridline);
+    color: var(--text-secondary);
+  }
+  .status-scheduled {
+    background: var(--accent-tint);
+    color: var(--accent);
+    border: 1px solid var(--hairline);
+  }
+
+  footer {
+    margin-top: 2.5rem;
+    font-size: 0.78rem;
+    color: var(--text-muted);
+  }
+</style>
+</head>
+<body>
+  <div class="page">
+    <h1>Welfare Loan Requests</h1>
+    <p class="subtitle">Generated 2026-09-03T12:53:44.839Z from local synthetic/redacted fixtures. Not connected to live Gmail.</p>
+
+    <div class="stat-row">
+      <div class="stat-tile">
+        <div class="value">5</div>
+        <div class="label">Loan requests</div>
+      </div>
+      <div class="stat-tile">
+        <div class="value">4</div>
+        <div class="label"><span class="stat-dot" aria-hidden="true"></span>Awaiting internal review (not shown above)</div>
+      </div>
+    </div>
+
+    <div class="card table-wrap">
+      <table>
+        <caption>Loan requests</caption>
+        <thead>
+          <tr>
+            <th scope="col">Date</th>
+            <th scope="col">Requested By</th>
+            <th scope="col">Amount</th>
+            <th scope="col">Reason</th>
+            <th scope="col">Loan Type</th>
+            <th scope="col">Status</th>
+          </tr>
+        </thead>
+        <tbody>
+      <tr>
+        <td>2026-08-20</td>
+        <td>Test Requester A</td>
+        <td class="num">LKR 50,000</td>
+        <td>urgent medical expenses</td>
+        <td><span class="badge">Personal</span></td>
+        <td><span class="status-neutral">Submitted</span></td>
+      </tr>
+      <tr>
+        <td>2026-08-20</td>
+        <td>Test Requester K</td>
+        <td class="num">LKR 45,000</td>
+        <td>home repairs</td>
+        <td><span class="badge">Personal</span></td>
+        <td><span class="status-scheduled">Scheduled for November</span></td>
+      </tr>
+      <tr>
+        <td>2026-08-23</td>
+        <td>Test &amp; &lt;Requester&gt; &quot;C&quot;</td>
+        <td class="num">LKR 20,000</td>
+        <td>my son&#39;s school fees &amp; &lt;priority&gt; books</td>
+        <td><span class="badge">Personal</span></td>
+        <td><span class="status-neutral">Submitted</span></td>
+      </tr>
+      <tr>
+        <td>2026-08-25</td>
+        <td>Test Requester J</td>
+        <td class="num">LKR 35,000</td>
+        <td>urgent medical expenses</td>
+        <td><span class="badge">Personal</span></td>
+        <td><span class="status-neutral">Submitted</span></td>
+      </tr>
+      <tr>
+        <td>2026-08-31</td>
+        <td>Test Requester I</td>
+        <td class="num">LKR 100,000</td>
+        <td>an urgent personal matter</td>
+        <td><span class="badge">Personal</span></td>
+        <td><span class="status-neutral">Submitted</span></td>
+      </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <section class="review">
+      <div class="card">
+        <p class="note">Internal review queue - incomplete/ambiguous requests that were not added to the table above. Not part of the staff-facing business table. "Open email" links assume you're signed into the relevant Gmail account as your primary browser account - if it opens the wrong inbox, switch accounts first.</p>
+        <div class="table-wrap">
+          <table>
+            <caption>Needs review</caption>
+            <thead>
+              <tr>
+                <th scope="col">Received / From / Subject</th>
+                <th scope="col">Extracted so far</th>
+                <th scope="col">Review note</th>
+                <th scope="col">Action</th>
+              </tr>
+            </thead>
+            <tbody>
+      <tr>
+        <td>
+          2026-08-22<br>
+          <span class="muted-inline">Test Requester D &lt;test.requester.d@example-welfare.test&gt;</span><br>
+          <span class="muted-inline">Personal Loan Request</span>
+        </td>
+        <td><strong>Requested By:</strong> Test Requester D &nbsp;·&nbsp; <strong>Reason:</strong> urgent medical expenses &nbsp;·&nbsp; <strong>Loan Type:</strong> Personal</td>
+        <td><span class="status-badge">Needs review</span> Missing/ambiguous field(s): amount</td>
+        <td>
+          <a class="open-link" href="https://mail.google.com/mail/u/0/#all/fixture-msg-0003" target="_blank" rel="noopener noreferrer">Open email &#8599;</a><br>
+          <code class="chip">fixture-msg-0003</code>
+        </td>
+      </tr>
+      <tr>
+        <td>
+          2026-08-26<br>
+          <span class="muted-inline">Test Requester F &lt;test.requester.f@example-welfare.test&gt;</span><br>
+          <span class="muted-inline">Loan Request</span>
+        </td>
+        <td><strong>Requested By:</strong> Test Requester F &nbsp;·&nbsp; <strong>Amount:</strong> LKR 40,000 &nbsp;·&nbsp; <strong>Reason:</strong> home repairs</td>
+        <td><span class="status-badge">Needs review</span> Missing/ambiguous field(s): loanType</td>
+        <td>
+          <a class="open-link" href="https://mail.google.com/mail/u/0/#all/fixture-msg-0006" target="_blank" rel="noopener noreferrer">Open email &#8599;</a><br>
+          <code class="chip">fixture-msg-0006</code>
+        </td>
+      </tr>
+      <tr>
+        <td>
+          2026-08-27<br>
+          <span class="muted-inline">Test Requester G &lt;test.requester.g@example-welfare.test&gt;</span><br>
+          <span class="muted-inline">Personal Loan Request</span>
+        </td>
+        <td><strong>Requested By:</strong> Test Requester G &nbsp;·&nbsp; <strong>Reason:</strong> medical bills &nbsp;·&nbsp; <strong>Loan Type:</strong> Personal</td>
+        <td><span class="status-badge">Needs review</span> Missing/ambiguous field(s): amount</td>
+        <td>
+          <a class="open-link" href="https://mail.google.com/mail/u/0/#all/fixture-msg-0007" target="_blank" rel="noopener noreferrer">Open email &#8599;</a><br>
+          <code class="chip">fixture-msg-0007</code>
+        </td>
+      </tr>
+      <tr>
+        <td>
+          2026-08-28<br>
+          <span class="muted-inline">Test Requester E &lt;test.requester.e@example-welfare.test&gt;</span><br>
+          <span class="muted-inline">Personal Loan Request</span>
+        </td>
+        <td><strong>Requested By:</strong> Test Requester E &nbsp;·&nbsp; <strong>Amount:</strong> LKR 60,000 &nbsp;·&nbsp; <strong>Reason:</strong> medical bills &nbsp;·&nbsp; <strong>Loan Type:</strong> Personal</td>
+        <td><span class="status-badge">Needs review</span> possible correction or follow-up; manual review required</td>
+        <td>
+          <a class="open-link" href="https://mail.google.com/mail/u/0/#all/fixture-msg-0008" target="_blank" rel="noopener noreferrer">Open email &#8599;</a><br>
+          <code class="chip">fixture-msg-0008</code>
+        </td>
+      </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <footer>Local development build. Source: fixtures/emails - not a live Gmail connection.</footer>
+  </div>
+</body>
+</html>

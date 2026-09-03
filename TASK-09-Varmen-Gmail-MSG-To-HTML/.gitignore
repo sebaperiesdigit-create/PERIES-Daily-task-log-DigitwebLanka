@@ -1,0 +1,25 @@
+node_modules/
+
+# Local development store — regenerated deterministically from fixtures/emails
+# by `npm run build`. Not committed so the repo always reflects fixtures as the
+# single source of truth; keep it locally so reruns/restarts persist.
+/data/*.json
+
+# Real secrets (Varmen DB credentials, Gmail OAuth client/refresh token, etc).
+# NEVER commit this file. Copy .env.example to .env and fill in real values
+# locally - see docs/README.md.
+.env
+
+# Real (redacted-by-nobody) email content fetched from Gmail for one-time
+# parser calibration (Stage 1). Never committed, never printed to chat/logs.
+# Delete this directory once parser patterns are confirmed - see
+# docs/README.md "Calibration cleanup".
+/data/calibration/
+
+# Stage 2 live pipeline output - contains REAL member names/amounts/reasons
+# once npm run gmail:live is used. NEVER commit. Kept fully separate from the
+# demo output/loan-requests.html and output/acknowledgements/, which are
+# built from fixtures/emails/*.json (synthetic only) and stay committed.
+/data/live/
+/output/live/
+

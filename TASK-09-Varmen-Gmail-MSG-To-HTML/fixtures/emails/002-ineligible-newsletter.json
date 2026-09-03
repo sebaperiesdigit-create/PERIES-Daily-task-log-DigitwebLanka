@@ -1,0 +1,9 @@
+{
+  "id": "fixture-msg-0002",
+  "threadId": "fixture-msg-0002",
+  "from": "newsletter@example-welfare.test",
+  "to": "members@example.test",
+  "subject": "Welfare Society Monthly Newsletter - August",
+  "receivedAt": "2026-08-21T08:00:00+05:30",
+  "bodyText": "This month's newsletter includes updates on the annual trip and membership renewal reminders. No loan-related content here."
+}

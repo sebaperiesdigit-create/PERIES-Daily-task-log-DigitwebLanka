@@ -1,0 +1,9 @@
+{
+  "id": "fixture-msg-0003",
+  "threadId": "fixture-msg-0003",
+  "from": "Test Requester D <test.requester.d@example-welfare.test>",
+  "to": "welfarescoilt@example.test",
+  "subject": "Personal Loan Request",
+  "receivedAt": "2026-08-22T11:30:00+05:30",
+  "bodyText": "Dear Welfare Team,\r\n\r\nI would like to kindly request a loan due to urgent medical expenses.\r\n\r\nKind regards,\r\nTest Requester D\r\n"
+}

@@ -1,0 +1,9 @@
+{
+  "id": "fixture-msg-0005",
+  "threadId": "fixture-msg-1000",
+  "from": "Test Requester B <test.requester.b@example-welfare.test>",
+  "to": "welfarescoilt@example.test",
+  "subject": "Re: Personal Loan Request",
+  "receivedAt": "2026-08-25T10:00:00+05:30",
+  "bodyText": "Yes, please proceed with LKR 30,000 due to relocation costs.\r\n\r\nKind regards,\r\nTest Requester B\r\n\r\nOn Mon, Aug 10, 2026 at 9:00 AM Digitweb Lanka Welfare Society <welfarescoilt@example.test> wrote:\r\n> Dear Test Requester B,\r\n> We refer to your request for a personal loan of LKR 90,000 due to an old unrelated reason.\r\n>\r\n> Kind regards,\r\n> Welfare Team\r\n"
+}

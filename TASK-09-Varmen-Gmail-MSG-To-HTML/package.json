@@ -1,0 +1,20 @@
+{
+  "name": "welfare-loan-html-tracker",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Task 09 - welfare loan request tracker. Demo pipeline (npm run build) uses synthetic fixtures only. Live Gmail read-only pipeline (npm run gmail:live) is a manual, deliberate command - never scheduled, never sends, never writes to Varmen DB.",
+  "type": "module",
+  "scripts": {
+    "build": "node src/run.js",
+    "test": "node --test test/*.test.js",
+    "gmail:auth": "node --env-file=.env src/gmail-auth.js",
+    "gmail:calibrate": "node --env-file=.env src/gmail-calibrate.js",
+    "gmail:live": "node --env-file=.env src/run-live.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "googleapis": "^178.0.0"
+  }
+}

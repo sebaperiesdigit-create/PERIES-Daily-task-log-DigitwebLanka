@@ -1,0 +1,9 @@
+{
+  "id": "fixture-msg-0014",
+  "threadId": "fixture-msg-0013",
+  "from": "Digitweb Lanka Welfare society <welfaredw@gmail.com>",
+  "to": "test.requester.k@example-welfare.test",
+  "subject": "Re: Personal Loan Request",
+  "receivedAt": "2026-08-21T10:00:00+05:30",
+  "bodyText": "Dear Test Requester K,\r\n\r\nWe refer to your request for a personal loan of LKR 45,000. Your loan request is currently scheduled for November, subject to the usual approval requirements.\r\n\r\nKind regards,\r\nWelfare Team\r\n\r\nOn Thu, Aug 20, 2026 at 9:00 AM Test Requester K <test.requester.k@example-welfare.test> wrote:\r\n> Dear Welfare Team,\r\n> I would like to request LKR 45,000 due to home repairs.\r\n>\r\n> Kind regards,\r\n> Test Requester K\r\n"
+}
