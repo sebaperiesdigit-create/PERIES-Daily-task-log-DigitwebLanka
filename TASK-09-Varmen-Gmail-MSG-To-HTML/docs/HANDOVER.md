@@ -1,21 +1,34 @@
 # Task 09 — Handover (last updated 2026-09-04, end of session)
 
+## 🔴 CONFIRMED: real loan-requester data is PUBLICLY EXPOSED, no login required
+
+**User verified directly in an incognito browser (2026-09-04): the hub page
+at `varman-aios-hub-varmens.vercel.app/view/hub_pages/Digit-Web-loan-requests`
+loads with NO login required AND the loan-request table populates with
+REAL data** (names, amounts, reasons — pushed via `hub-push/` on
+2026-09-04). This is an active, ongoing exposure, not a theoretical risk.
+This directly contradicts the access-control model Stage 4 was built
+around (network-isolation as the *only* control, since there's no
+app-level login) — `hub-push/` bypassed that entirely.
+
+**As of end of this session, the exposure has NOT been taken down** — no
+unilateral action was taken (no credentials for the hub DB were ever used
+in this session; `hub-push/` was never run by this session). This is the
+single highest-priority item to resume with: whether to unpublish/delete
+the hub_pages row (id 425, slug `Digit-Web-loan-requests`), pending the
+user's decision on how (their own action, this session helping via a
+script, or looping in whoever owns the Varmen AIOS hub).
+
 ## ⏸ PAUSED HERE (2026-09-04) — read before resuming
 
-Per user + supervisor discussion, work stops at this point deliberately.
-**Stage 3 (Varmen DB) is drafted but intentionally NOT continued further** —
-resume only when the user explicitly says to pick it back up. Nothing about
-this pause changes any of the "Do NOT do" rules below; if anything, be more
-conservative about Stage 3 until told otherwise. See "Stage 3" section below
-for exactly what's built vs. not, and the ordered next-steps list to resume
-from.
-
-**⚠️ Also unresolved: possible public exposure of real data via `hub-push/`**
-— see the "Hub push" bullet under "What actually works right now" below.
-Real loan-requester data may currently be viewable by anyone with a link,
-with no confirmation it's actually protected. Not something to fix
-unilaterally — flag it again if the user hasn't mentioned it by the time
-this resumes.
+Per user + supervisor discussion, work on Stage 3 (Varmen DB) stops at this
+point deliberately. **Stage 3 is drafted but intentionally NOT continued
+further** — resume only when the user explicitly says to pick it back up.
+Nothing about this pause changes any of the "Do NOT do" rules below; if
+anything, be more conservative about Stage 3 until told otherwise. See
+"Stage 3" section below for exactly what's built vs. not, and the ordered
+next-steps list to resume from. **This pause is separate from, and lower
+priority than, the confirmed public-exposure issue above.**
 
 **Read this file first when resuming this task.** It's the single source of
 truth for "where did we leave off" — more current than `docs/README.md`
@@ -88,26 +101,17 @@ automated inference.
   a slug only to update that same page. `hub-push/.env` holds a live DB
   credential — must be gitignored if this project ever becomes its own repo.
 
-  **⚠️ UNVERIFIED PUBLIC-EXPOSURE QUESTION (raised 2026-09-04, NOT
-  resolved):** this bypasses the exact safeguard Stage 4 was built around —
-  Stage 4's hard gate exists specifically because there's no app-level
-  login, so network isolation is the *only* access control, and it cannot
-  proceed until Varmen/IT confirm the server is internal-only. The hub-push
-  mechanism was already used to publish real requester data
-  (names/amounts/reasons) to a public Vercel URL
-  (`varman-aios-hub-varmens.vercel.app/view/hub_pages/Digit-Web-loan-requests`)
-  with no equivalent confirmation. Checked via WebFetch (2026-09-04): the
-  page's raw HTML shell is reachable with **no login wall** — no auth
-  redirect, no sign-in form on the initial request. However, the shell
-  itself is empty (breadcrumb only, no table markup) — it appears to be a
-  client-rendered app that loads the actual data afterward via JavaScript
-  calling an API, and WebFetch cannot execute JavaScript, so **whether the
-  real data-loading step is itself gated by auth could not be determined**.
-  **Unresolved — needs the user to check directly**: open that URL in a
-  private/incognito browser window (fully logged out) and see whether the
-  loan-request table actually populates with real data. If it does, real
-  welfare-loan data is currently publicly viewable by anyone with the link.
-  Do not push anything else via `hub-push/` until this is settled.
+  **🔴 CONFIRMED PUBLIC EXPOSURE (2026-09-04) — see the top banner of this
+  file.** WebFetch first found no login wall on the raw HTML shell but
+  couldn't confirm whether the client-rendered data step was also
+  unauthenticated. **User then verified directly in an incognito browser:
+  the page loads with no login AND the table populates with real
+  data.** This is real welfare-loan requester data (names/amounts/reasons),
+  currently public to anyone with the link, as of end of session. **Not
+  taken down yet — do not push anything else via `hub-push/` until this is
+  resolved, and treat taking it down as the top-priority item when this
+  resumes** (see top banner for the options: user's own action, this
+  session helping via a script once directed, or looping in the hub owner).
 
 ## Today's real-data findings and fixes (chronological — all in `PARSER_VERSION` history in `src/config.js`)
 
