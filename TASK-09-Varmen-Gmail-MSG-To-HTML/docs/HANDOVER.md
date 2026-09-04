@@ -90,6 +90,22 @@ executed:
 schema exists, table exists. **Varmen DB now has the real table — this is
 the first actual write Stage 3 has ever made.**
 
+**How to verify this yourself in pgAdmin** (same connection set up earlier
+in this session — server registered with SSL mode Require):
+1. Expand **Databases → varmen_db → Schemas** — `welfare` should now be
+   listed (it wasn't before).
+2. Expand `welfare` → **Tables** — `loan_requests` should be there.
+3. Right-click it → **Properties** → **Columns** tab to see all 24 columns,
+   or **View/Edit Data → All Rows** to confirm it's currently empty (0
+   rows) — expected, since nothing writes to it yet.
+4. Or run this in a **Query Tool** on `varmen_db` for a one-shot check of
+   every column + type at once:
+   ```sql
+   SELECT column_name, data_type FROM information_schema.columns
+   WHERE table_schema = 'welfare' AND table_name = 'loan_requests'
+   ORDER BY ordinal_position;
+   ```
+
 **What this does NOT mean yet:** the table is empty. Nothing in
 `src/pipeline.js`/`src/run-live.js` writes to it — the JSON store
 (`data/live/store.json`) is still the only thing the live pipeline actually
