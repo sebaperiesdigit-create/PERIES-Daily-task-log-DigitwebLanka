@@ -25,7 +25,7 @@ fixing** — it's explicitly deprioritized, not closed. Do not close or
 remove this section on your own judgment; only the user reopening/resolving
 it should change this.
 
-## ▶️ Stage 3 (Varmen DB) — RESUMED 2026-09-04, active, schema question RESOLVED
+## ✅ Stage 3 (Varmen DB) — TABLE CREATED 2026-09-04
 
 Per explicit user instruction, Stage 3 work resumed (see sequencing decision
 above) and made real progress this session:
@@ -76,15 +76,27 @@ approved. `sql/001_create_welfare_loan_requests.sql` now:
   whether the schema already existed or will be created, purely
   informational. Still aborts if `welfare.loan_requests` already exists.
 
-**Still BLOCKED on execution.** Updating the SQL file is not the same as
-approval to run it. **Do not run `db-migrate.js` or attempt any further DB
-write on your own initiative** — the next step (running
-`npm run db:migrate` against the real database) needs its own separate,
-explicit "run the migration" go-ahead, per this task's standing pattern.
-One open risk worth surfacing when that's asked: if `varmen_user` lacks
-`CREATE SCHEMA` privilege, the migration will fail cleanly with a
-permissions error (nothing partial applied, thanks to the transaction) —
-not something confirmable without attempting it.
+**MIGRATION RUN, 2026-09-04 — SUCCESS.** User reviewed the SQL one final
+time, asked for my explicit confirmation it was correct, then said to run
+it. `node --env-file=.env src/db-migrate.js` (i.e. `npm run db:migrate`)
+executed:
+- ✅ Identity check passed.
+- ✅ `welfare` schema created (`CREATE SCHEMA IF NOT EXISTS`).
+- ✅ `welfare.loan_requests` table created (24 columns, transaction
+  committed cleanly — no permissions issue, contrary to the one risk that
+  had been flagged beforehand).
+
+**Verified immediately after via the read-only check** (`src/db-check.js`):
+schema exists, table exists. **Varmen DB now has the real table — this is
+the first actual write Stage 3 has ever made.**
+
+**What this does NOT mean yet:** the table is empty. Nothing in
+`src/pipeline.js`/`src/run-live.js` writes to it — the JSON store
+(`data/live/store.json`) is still the only thing the live pipeline actually
+uses. `src/pg-store.js` (mirrors `store.js`'s interface, per the "parallel
+JSON+DB store" decision locked in earlier) has **not been built yet** —
+that's the next real piece of work, and, per this task's standing pattern,
+still needs its own separate go-ahead before it's wired into `runPipeline`.
 
 See the "Stage 3" section further below for the full file inventory and the
 decisions locked in during the earlier grill-me session (execution owner,
@@ -168,9 +180,10 @@ they were run successfully against the real inbox twice in draft-only backfill
 mode (zero acknowledgements created, as required). On 2026-09-04 a genuine
 **non-backfill** live run was also done successfully (see below) — the
 acknowledgement-drafting path for real "new mail" is now proven, not just the
-backfill path. **Stage 3 (Varmen DB) is now DRAFTED but NOT EXECUTED** — see
-its own section below. Stage 4 (web page), Stage 5 (real sending) are **not
-started**.
+backfill path. **Stage 3 (Varmen DB): `welfare.loan_requests` table now
+EXISTS in the real database** (created 2026-09-04) — but nothing writes to
+it yet; see its own section above/below. Stage 4 (web page), Stage 5 (real
+sending) are **not started**.
 
 The user explicitly said (2026-09-03): **"leave [the remaining needs_review
 item] as-is for manual review for now"** — do not build further
@@ -399,14 +412,13 @@ new information):**
   mechanism is a deliberate, separate, human-only path — do not blur the two.
 - Do **not** add `gmail.send`, add scheduling/cron, or change Google Cloud
   settings — none of this exists in the codebase, intentionally.
-- Do **not** run `npm run db:migrate`, add `CREATE SCHEMA` to the SQL file,
-  or make any further Varmen DB write on your own initiative — confirmed
-  2026-09-04 (independently, via pgAdmin) that `welfare` schema genuinely
-  doesn't exist in the correct DB, but that's not approval to add
-  `CREATE SCHEMA` and run the migration (see "Stage 3" banner above). `npm
-  install` and read-only connections (`src/db-check.js`) already happened
-  this session, each with separate explicit approval — that precedent does
-  NOT extend to the next step; wait for the user to report back.
+- Do **not** run `npm run db:migrate` again (the table already exists —
+  `db-migrate.js` will now abort on purpose if it's re-run, per its
+  table-already-exists guard) or make any further Varmen DB write on your
+  own initiative. `welfare.loan_requests` exists as of 2026-09-04 — the
+  next real step is building `src/pg-store.js` and wiring it into
+  `runPipeline` (see "Stage 3" banner above), which still needs its own
+  separate go-ahead before any code writes to this table for real.
 - Do **not** delete `.env` or print its contents. DB credentials are already
   in there (`VARMEN_DB_*`), unused by any code.
 
