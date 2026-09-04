@@ -1,6 +1,66 @@
 # Task 09 — Handover (last updated 2026-09-04, end of session)
 
-## ✅ v9: Loan Type reversal + staff-confirmation-reply gap-filling (built, tested, NOT run against real mail)
+## ✅ v10 + v11: two rounds of REAL bugs found by the user reviewing actual output, both fixed and re-applied
+
+**v10 — "Requested By" storing a whole sentence.** After the v9 historical
+pull, the user reviewed the real live table and found a "Requested By"
+value that was clearly not a name (an entire closing sentence). Root
+cause: `extractRequestedBy`'s sign-off regex matched the FIRST occurrence
+of any configured phrase (including bare "regards") anywhere in the body -
+including incidental mid-paragraph prose like "...in regards to my
+studies..." - and, since `unwrapHardLineWraps` merges a paragraph onto one
+line, captured everything to the end of that paragraph. The 80-char length
+cap didn't catch it (76 chars). **Fixed** (`src/parser.js`): uses the LAST
+sign-off match, not the first, and every candidate must now be name-shaped
+(`looksLikeName` - every word starts uppercase, max 5 words) - applies to
+the sign-off path only, never the From-header path. 2 new regression
+tests. Also had to rework `fixtures/emails/004-html-special-characters.json`
+(the HTML-escaping test) since it deliberately injected non-name-shaped
+content via the sign-off - moved that injection to the From header
+instead, which is only cleaned, never shape-rejected.
+
+**v11 — "Rs." currency prefix + "educational loan" phrasing.** Immediately
+after re-running with the v10 fix, the user shared real Gmail screenshots
+(5 threads - requester emails AND staff replies) showing **"Rs. 100,000"**
+is the actual standard currency notation used, not "LKR" - `amountPatterns`
+only ever recognized "LKR". Not just cosmetic: "a welfare loan of Rs.
+100,000" broke BOTH extraction patterns at once (the bare-number fallback
+requires digits immediately after "of"/"for", and "Rs. " in between broke
+that too), sending an otherwise-complete request to needs_review. **Fixed**:
+`amountPatterns` now accepts "LKR" or "Rs" (`\b`-anchored so it can never
+match mid-word, e.g. inside "Mrs."). Same screenshots also showed a real
+requester writing "an **educational** loan" (adjective form) - the body
+phrase list only had the noun form "education loan" (no space between
+"education" and "-al", so it silently didn't match - masked in that one
+case only because the subject line separately resolved the type). Added
+"educational loan" as an explicit phrase. 6 new regression tests
+(synthetic data - never reused the real names/amounts from the
+screenshots in a committed test file). `PARSER_VERSION` is now `v11` -
+kept separate from v10 rather than folding in, since v10 had already been
+re-run against real data before these were found; each record's
+`parser_version` stays an accurate record of exactly which fixes were
+active when it was produced.
+
+**Both re-applied to real data, in sequence, same session:**
+1. v10 re-run: `data/live/store.json` went from 5→13 records again (same
+   historical pull repeated with the fix); real requested-by junk
+   confirmed gone by spot-check.
+2. v11 re-run (immediately after, same temporary flags still set from the
+   v10 run): **store went from 8 ok/5 needs_review to 10 ok/3
+   needs_review** - the Rs.-prefix fix alone recovered 2 more genuinely
+   complete requests that were stuck in needs_review. **Verified via a
+   read-only query**: 13 total rows in `welfare.loan_requests`, all 13 at
+   `parser_version = 'v11'`, **zero rows with a `requested_by` longer than
+   30 characters** (structural confirmation the junk-sentence bug is
+   gone, without printing any real name).
+3. Both temporary flags (`GMAIL_FETCH_SINCE_DAYS=all`, `FORCE_BACKFILL=true`)
+   reverted immediately after the v11 re-run, confirmed removed by key
+   name, all other `.env` keys confirmed still intact.
+
+**Remaining 3 needs_review records are still genuinely actionable** via
+`data/live/corrections.json` whenever reviewed.
+
+## ✅ v9: Loan Type reversal + staff-confirmation-reply gap-filling (built, tested, run against real mail)
 
 While gathering context for the missing-requests investigation below, the
 user requested (via a grill-me session) several deliberate extraction-rule
@@ -381,8 +441,9 @@ explicitly picks a direction — do not default to one.**
 
 ## TL;DR status
 
-**72/72 tests passing. `PARSER_VERSION = "v9"`** (see the v9 banner at the
-top of this file for what changed most recently). Stage 1 (Gmail read-only) and
+**78/78 tests passing. `PARSER_VERSION = "v11"`** (see the v10/v11 banner
+at the very top of this file for the two most recent real-bug fixes).
+Stage 1 (Gmail read-only) and
 Stage 2 (full Gmail integration) of the 5-stage plan are built. On 2026-09-03
 they were run successfully against the real inbox twice in draft-only backfill
 mode (zero acknowledgements created, as required). On 2026-09-04 a genuine
@@ -677,7 +738,7 @@ new information):**
 ## Quick reference — commands
 
 ```bash
-npm test                                    # 72 tests, should all pass
+npm test                                    # 78 tests, should all pass
 npm run build                               # demo pipeline (safe, no network)
 node --env-file=.env src/run-live.js        # REAL live pull - ask first
 node --env-file=.env src/gmail-auth.js      # re-auth if the refresh token ever fails
