@@ -25,6 +25,16 @@ fixing** — it's explicitly deprioritized, not closed. Do not close or
 remove this section on your own judgment; only the user reopening/resolving
 it should change this.
 
+**Reaffirmed later the same session (2026-09-04), after Stage 3's DB-write
+code was built and stable:** asked genuinely, unprompted, whether this
+should now be the priority (reasoning: everything else on this task is an
+*unstarted or paused feature* — no ongoing harm from waiting; this is the
+one item that's an *active, ongoing* exposure, getting worse the longer it
+sits). **User explicitly declined again: "no need for that step just keep
+them aside."** This is now a twice-confirmed, deliberate deprioritization —
+**do not raise it a third time unprompted.** Only act on it if the user
+brings it up themselves.
+
 ## ✅ Stage 3 (Varmen DB) — TABLE CREATED 2026-09-04
 
 Per explicit user instruction, Stage 3 work resumed (see sequencing decision
