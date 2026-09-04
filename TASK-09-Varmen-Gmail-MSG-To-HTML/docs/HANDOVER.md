@@ -1,5 +1,27 @@
 # Task 09 — Handover (last updated 2026-09-04, end of session)
 
+## ⚠️ `data/live/corrections.json` now exists with PLACEHOLDER text - do not run-live.js until filled in
+
+Created 2026-09-04 with entries for the 2 remaining needs_review records
+(both missing ONLY `reason` - Requested By/Amount/Loan Type all already
+extracted fine):
+```json
+{
+  "19bbb25a2722f687": { "reason": "<read the email and fill this in>", "correctedBy": "Your Name" },
+  "19bbb061e8835831": { "reason": "<read the email and fill this in>", "correctedBy": "Your Name" }
+}
+```
+**The corrections mechanism does not validate text - it fills in whatever
+is there.** If `run-live.js` runs while the literal placeholder string is
+still in this file, that placeholder text itself would get stored as the
+real `reason` value, marked as corrected. **Before the next live run**,
+the user needs to open each record's "Open email" link, read the real
+reason, and replace the placeholder - or remove an entry entirely if not
+ready to resolve it yet. Do not run `run-live.js` on the user's behalf
+without checking this file no longer contains the placeholder text for
+any entry still present in it. File is gitignored (`/data/live/`),
+confirmed via `git check-ignore`.
+
 ## ✅ v10 + v11 + v12: three rounds of REAL bugs found by the user reviewing actual output, all fixed and re-applied
 
 **v12 — Reason extraction too narrow, missing real phrasings.** User asked
