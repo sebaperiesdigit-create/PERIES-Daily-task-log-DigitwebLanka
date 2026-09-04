@@ -135,7 +135,17 @@ function cleanExtractedName(name, config) {
   return cleaned;
 }
 
-/** Sign-off name in the new text first; falls back to the From header's display name. */
+/**
+ * Real inbox evidence (2026-09-04): a sign-off is often just a first name
+ * ("Kind regards, Sajeepan") while this org's Gmail accounts are labeled
+ * "<firstname> digitweblanka" - but occasionally the From header's display
+ * name carries a real surname the sign-off doesn't (e.g. sign-off
+ * "M.Manoranjani" vs header "manoranjani maheswaran"). Picking sign-off
+ * unconditionally silently dropped that surname. Fixed: extract both
+ * candidates and keep whichever has MORE name parts (a strict proxy for
+ * "fuller name"); ties keep the sign-off, since it's the requester's own
+ * words about their own name.
+ */
 function extractRequestedBy(newText, fromHeader, config) {
   const alternation = config.signOffPhrases.map(escapeRegExp).join("|");
   // Generic \s+ (not specifically \r?\n+): after unwrapping hard line-wraps,
@@ -144,17 +154,26 @@ function extractRequestedBy(newText, fromHeader, config) {
   // that and a genuine paragraph break (still present as \n\n).
   const signOffRe = new RegExp(`(?:${alternation})[,:.]?\\s+([^\\r\\n]+)`, "i");
   const match = signOffRe.exec(newText);
+  let signOffName = null;
   if (match) {
     const name = cleanExtractedName(match[1].trim(), config);
-    if (name.length > 0 && name.length < 80) return name;
+    if (name.length > 0 && name.length < 80) signOffName = name;
   }
 
+  let headerName = null;
   if (fromHeader) {
     const displayName = cleanExtractedName(fromHeader.split("<")[0].trim(), config);
-    if (displayName.length > 0) return displayName;
+    if (displayName.length > 0) headerName = displayName;
   }
 
-  return null;
+  if (signOffName && headerName) {
+    return namePartCount(headerName) > namePartCount(signOffName) ? headerName : signOffName;
+  }
+  return signOffName ?? headerName ?? null;
+}
+
+function namePartCount(name) {
+  return name.split(/\s+/).filter(Boolean).length;
 }
 
 /** True if the sender's new text contains any configured correction/follow-up signal phrase. */

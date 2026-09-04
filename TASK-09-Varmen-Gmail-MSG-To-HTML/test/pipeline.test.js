@@ -362,6 +362,32 @@ test("a sign-off and name on the same unwrapped line (no line break between them
   assert.equal(record.requestedBy, "Same Line Name");
 });
 
+test("From header surname is kept when the sign-off is only a first name (real bug: sign-off 'M.Manoranjani' vs header 'manoranjani maheswaran' dropped the surname)", () => {
+  const email = {
+    id: "signoff-first-name-only-1",
+    threadId: "signoff-first-name-only-1",
+    from: "Firstname Lastname <firstname.lastname@example-welfare.test>",
+    subject: "Personal Loan Request",
+    receivedAt: "2026-08-31T09:00:00+05:30",
+    bodyText: "Dear Welfare Team,\r\n\r\nI would like to request LKR 5,000 due to a test reason.\r\n\r\nKind regards,\r\nFirstname\r\n",
+  };
+  const record = parseEmail(email, config);
+  assert.equal(record.requestedBy, "Firstname Lastname");
+});
+
+test("sign-off is still preferred when it is at least as full as the From header display name", () => {
+  const email = {
+    id: "signoff-fuller-than-header-1",
+    threadId: "signoff-fuller-than-header-1",
+    from: "firstname digitweblanka <firstnamedigitweblanka@example-welfare.test>",
+    subject: "Personal Loan Request",
+    receivedAt: "2026-08-31T09:00:00+05:30",
+    bodyText: "Dear Welfare Team,\r\n\r\nI would like to request LKR 5,000 due to a test reason.\r\n\r\nKind regards,\r\nM. Firstname\r\n",
+  };
+  const record = parseEmail(email, config);
+  assert.equal(record.requestedBy, "M. Firstname");
+});
+
 test("missing amount entirely (no currency, no anchored number) becomes needs_review", () => {
   const ws = freshWorkspace();
   const { allRecords } = runPipeline({ fixturesDir, ...ws });
@@ -531,6 +557,72 @@ test("gap-filling never touches an already-'ok' record, even if a same-sender re
   assert.equal(target.parseStatus, "ok");
   assert.equal(target.amount, "LKR 20,000", "an already-complete record must never be revised by a later reply");
   assert.equal(target.gapFilledFromMessageId, undefined);
+});
+
+// --- Manual review corrections (2026-09-04) ---------------------------------------
+
+test("a hand-edited corrections file fills a genuinely missing field and completes the request", () => {
+  const ws = freshWorkspace();
+  const correctionsPath = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "task09-corrections-")), "corrections.json");
+  // fixture-msg-0003 is missing only "amount" - requestedBy/reason/loanType did extract.
+  fs.writeFileSync(
+    correctionsPath,
+    JSON.stringify({ "fixture-msg-0003": { amount: "LKR 60,000", correctedBy: "Test Reviewer" } })
+  );
+
+  const { allRecords } = runPipeline({ fixturesDir, correctionsPath, ...ws });
+
+  const target = allRecords.find((r) => r.sourceId === "fixture-msg-0003");
+  assert.ok(target);
+  assert.equal(target.parseStatus, "ok", "the corrected amount completes the request");
+  assert.equal(target.amount, "LKR 60,000");
+  assert.equal(target.correctedBy, "Test Reviewer");
+  assert.ok(target.correctedAt);
+});
+
+test("a correction never overwrites a field that was already successfully extracted", () => {
+  const ws = freshWorkspace();
+  const correctionsPath = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "task09-corrections-")), "corrections.json");
+  // fixture-msg-0003's requestedBy already extracts as "Test Requester D" -
+  // a correction claiming a different name must be ignored, even though the
+  // record is still needs_review (still missing amount).
+  fs.writeFileSync(
+    correctionsPath,
+    JSON.stringify({ "fixture-msg-0003": { requestedBy: "Someone Else", amount: "LKR 60,000" } })
+  );
+
+  const { allRecords } = runPipeline({ fixturesDir, correctionsPath, ...ws });
+
+  const target = allRecords.find((r) => r.sourceId === "fixture-msg-0003");
+  assert.equal(target.requestedBy, "Test Requester D", "an already-extracted value must never be overwritten");
+  assert.equal(target.amount, "LKR 60,000", "a genuinely missing field is still filled");
+});
+
+test("a correction is ignored for an already-'ok' record", () => {
+  const ws = freshWorkspace();
+  const correctionsPath = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "task09-corrections-")), "corrections.json");
+  // fixture-msg-0001 is a fully-extracted "ok" fixture - a correction
+  // targeting it must be a no-op, matching the gap-fill boundary.
+  fs.writeFileSync(correctionsPath, JSON.stringify({ "fixture-msg-0001": { reason: "a different reason entirely" } }));
+
+  const { allRecords } = runPipeline({ fixturesDir, correctionsPath, ...ws });
+
+  const target = allRecords.find((r) => r.sourceId === "fixture-msg-0001");
+  assert.ok(target);
+  assert.equal(target.parseStatus, "ok");
+  assert.equal(target.correctedBy, undefined, "an already-ok record must never be touched by a correction");
+});
+
+test("a missing corrections file is silently ignored (the mechanism is entirely optional)", () => {
+  const ws = freshWorkspace();
+  const { allRecords } = runPipeline({
+    fixturesDir,
+    correctionsPath: path.join(ws.storePath, "..", "does-not-exist.json"),
+    ...ws,
+  });
+
+  const stillReview = allRecords.find((r) => r.sourceId === "fixture-msg-0003");
+  assert.equal(stillReview.parseStatus, "needs_review");
 });
 
 // --- Loan status, 6th column (2026-09-03) ----------------------------------------

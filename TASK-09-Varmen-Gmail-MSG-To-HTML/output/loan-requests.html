@@ -216,7 +216,7 @@
 <body>
   <div class="page">
     <h1>Welfare Loan Requests</h1>
-    <p class="subtitle">Generated 2026-09-03T12:53:44.839Z from local synthetic/redacted fixtures. Not connected to live Gmail.</p>
+    <p class="subtitle">Generated 2026-09-04T03:11:01.619Z from local synthetic/redacted fixtures. Not connected to live Gmail.</p>
 
     <div class="stat-row">
       <div class="stat-tile">
@@ -239,7 +239,7 @@
             <th scope="col">Amount</th>
             <th scope="col">Reason</th>
             <th scope="col">Loan Type</th>
-            <th scope="col">Status</th>
+            <th scope="col">Loan Status</th>
           </tr>
         </thead>
         <tbody>
@@ -289,7 +289,7 @@
 
     <section class="review">
       <div class="card">
-        <p class="note">Internal review queue - incomplete/ambiguous requests that were not added to the table above. Not part of the staff-facing business table. "Open email" links assume you're signed into the relevant Gmail account as your primary browser account - if it opens the wrong inbox, switch accounts first.</p>
+        <p class="note">Internal review queue - incomplete/ambiguous requests that were not added to the table above. Not part of the staff-facing business table. "Open email" links assume you're signed into the relevant Gmail account as your primary browser account - if it opens the wrong inbox, switch accounts first. To resolve a row after reading the original email, add its missing field(s) to <code class="chip">data/live/corrections.json</code> keyed by the id shown below (e.g. <code class="chip">{"&lt;id&gt;": {"loanType": "Personal", "correctedBy": "Your Name"}}</code>) and rerun the live pipeline - it will move into the table above automatically, without overwriting anything already extracted correctly.</p>
         <div class="table-wrap">
           <table>
             <caption>Needs review</caption>

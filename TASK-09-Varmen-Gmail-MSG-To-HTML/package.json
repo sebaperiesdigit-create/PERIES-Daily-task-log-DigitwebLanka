@@ -9,12 +9,14 @@
     "test": "node --test test/*.test.js",
     "gmail:auth": "node --env-file=.env src/gmail-auth.js",
     "gmail:calibrate": "node --env-file=.env src/gmail-calibrate.js",
-    "gmail:live": "node --env-file=.env src/run-live.js"
+    "gmail:live": "node --env-file=.env src/run-live.js",
+    "db:migrate": "node --env-file=.env src/db-migrate.js"
   },
   "engines": {
     "node": ">=20"
   },
   "dependencies": {
-    "googleapis": "^178.0.0"
+    "googleapis": "^178.0.0",
+    "pg": "^8.13.1"
   }
 }

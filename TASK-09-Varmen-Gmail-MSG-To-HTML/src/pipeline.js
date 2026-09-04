@@ -108,6 +108,59 @@ function fromHeaderMatchesAddress(fromHeader, address) {
   return (fromHeader ?? "").toLowerCase().includes(address.toLowerCase());
 }
 
+/** Reads data/live/corrections.json if it exists; returns null if not (mechanism is entirely optional). */
+function loadCorrections(correctionsPath) {
+  if (!correctionsPath || !fs.existsSync(correctionsPath)) return null;
+  const raw = fs.readFileSync(correctionsPath, "utf8");
+  return JSON.parse(raw);
+}
+
+/**
+ * Manual review corrections (interim mechanism, 2026-09-04, agreed via a
+ * grill-me session - see docs/HANDOVER.md). A human reviewer opens the
+ * "Open email" link on a needs_review row, reads the original message, and
+ * hand-edits data/live/corrections.json - keyed by the record's sourceId
+ * (the same id shown in the needs-review section's chip) - to supply a
+ * genuinely missing field, e.g. { "loanType": "Personal", "correctedBy":
+ * "Staff Name" }. This is a deliberate, visible HUMAN judgment call, not
+ * automated inference, so it's tracked separately from the automatic
+ * same-sender gap-fill above (`correctedBy`/`correctedAt`, not
+ * `gapFilledFromMessageId`/`gapFilledAt`) - never conflated with it.
+ *
+ * Same two hard boundaries as the automatic gap-fill merge, on purpose:
+ *   1. Only fills a field that is currently null - never overwrites a value
+ *      that was already successfully extracted (a typo in the corrections
+ *      file can't silently clobber good auto-extracted data).
+ *   2. Only ever touches a record whose parseStatus is "needs_review" - an
+ *      already-"ok" record is never revisited.
+ */
+function applyManualCorrections({ parsed, corrections }) {
+  if (!corrections) return parsed;
+  return parsed.map((record) => {
+    if (record.parseStatus !== "needs_review") return record; // boundary 2
+    const correction = corrections[record.sourceId];
+    if (!correction) return record;
+
+    let changed = false;
+    const corrected = { ...record };
+    for (const field of BUSINESS_FIELDS) {
+      const value = correction[field];
+      if (corrected[field] === null && typeof value === "string" && value.trim() !== "") {
+        corrected[field] = value.trim(); // boundary 1
+        changed = true;
+      }
+    }
+    if (!changed) return record;
+
+    const stillMissing = BUSINESS_FIELDS.filter((field) => corrected[field] === null);
+    corrected.parseStatus = stillMissing.length === 0 ? "ok" : "needs_review";
+    corrected.reviewNotes = stillMissing.length > 0 ? `Missing/ambiguous field(s): ${stillMissing.join(", ")}` : null;
+    corrected.correctedBy = typeof correction.correctedBy === "string" ? correction.correctedBy.trim() : null;
+    corrected.correctedAt = new Date().toISOString();
+    return corrected;
+  });
+}
+
 /**
  * Loan status detection (v7, CONFIRMED 2026-09-03 - see config.js
  * statusStaffAddress/statusScheduledPattern for the full rationale).
@@ -173,6 +226,7 @@ export function runPipeline({
   ackDir,
   now,
   backfillMode = false,
+  correctionsPath,
 }) {
   const emails = providedEmails ?? loadFixtureEmails(fixturesDir);
   const store = new Store(storePath);
@@ -213,9 +267,23 @@ export function runPipeline({
     }
   }
 
+  const corrections = loadCorrections(correctionsPath);
+  if (corrections) {
+    // A correction can target a needs_review record even when nothing about
+    // it appeared in this run's fetch (no new reply - just a reviewer
+    // editing the corrections file) - so pull in any such record from the
+    // store that isn't already represented in `parsed` before applying.
+    for (const stored of Object.values(previouslyStored)) {
+      if (stored.parseStatus !== "needs_review") continue;
+      if (parsed.some((r) => r.sourceId === stored.sourceId)) continue;
+      parsed.push(stored);
+    }
+  }
+  const correctedRecords = applyManualCorrections({ parsed, corrections });
+
   // v7: attach the "Status" 6th column - only meaningful for "ok" records,
   // since needs_review ones aren't in the main table at all.
-  const withStatus = parsed.map((record) => {
+  const withStatus = correctedRecords.map((record) => {
     if (record.parseStatus !== "ok") return record;
     return { ...record, status: detectLoanStatus({ emails, record, previouslyStored, config }) };
   });

@@ -20,6 +20,9 @@ const root = path.join(__dirname, "..");
 const liveStorePath = path.join(root, "data", "live", "store.json");
 const liveHtmlPath = path.join(root, "output", "live", "loan-requests.html");
 const liveAckDir = path.join(root, "output", "live", "acknowledgements");
+// Optional, hand-edited by a reviewer - see src/pipeline.js `applyManualCorrections`.
+// Not created by this script; simply ignored if it doesn't exist.
+const liveCorrectionsPath = path.join(root, "data", "live", "corrections.json");
 
 async function main() {
   // STRICT backfill detection: if no live store exists yet, this is the
@@ -48,6 +51,7 @@ async function main() {
     outputHtmlPath: liveHtmlPath,
     ackDir: liveAckDir,
     backfillMode,
+    correctionsPath: liveCorrectionsPath,
   });
 
   const ok = allRecords.filter((r) => r.parseStatus === "ok").length;

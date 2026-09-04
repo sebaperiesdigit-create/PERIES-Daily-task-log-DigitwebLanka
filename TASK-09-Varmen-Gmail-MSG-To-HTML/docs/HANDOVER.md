@@ -1,4 +1,14 @@
-# Task 09 — Handover (last updated 2026-09-03, end of session)
+# Task 09 — Handover (last updated 2026-09-04, end of session)
+
+## ⏸ PAUSED HERE (2026-09-04) — read before resuming
+
+Per user + supervisor discussion, work stops at this point deliberately.
+**Stage 3 (Varmen DB) is drafted but intentionally NOT continued further** —
+resume only when the user explicitly says to pick it back up. Nothing about
+this pause changes any of the "Do NOT do" rules below; if anything, be more
+conservative about Stage 3 until told otherwise. See "Stage 3" section below
+for exactly what's built vs. not, and the ordered next-steps list to resume
+from.
 
 **Read this file first when resuming this task.** It's the single source of
 truth for "where did we leave off" — more current than `docs/README.md`
@@ -9,15 +19,22 @@ before doing anything Gmail/DB/deployment-related.
 
 ## TL;DR status
 
-**46/46 tests passing. `PARSER_VERSION = "v7"`.** Stage 1 (Gmail read-only) and
-Stage 2 (full Gmail integration) of the 5-stage plan are built and have been
-run successfully against the real inbox twice today, in draft-only backfill
-mode (zero acknowledgements created, as required). Stage 3 (Varmen DB),
-Stage 4 (web page), Stage 5 (real sending) are **not started**.
+**52/52 tests passing. `PARSER_VERSION = "v8"`.** Stage 1 (Gmail read-only) and
+Stage 2 (full Gmail integration) of the 5-stage plan are built. On 2026-09-03
+they were run successfully against the real inbox twice in draft-only backfill
+mode (zero acknowledgements created, as required). On 2026-09-04 a genuine
+**non-backfill** live run was also done successfully (see below) — the
+acknowledgement-drafting path for real "new mail" is now proven, not just the
+backfill path. **Stage 3 (Varmen DB) is now DRAFTED but NOT EXECUTED** — see
+its own section below. Stage 4 (web page), Stage 5 (real sending) are **not
+started**.
 
-The user explicitly said: **"leave [the remaining needs_review item] as-is
-for manual review for now"** — do not build further auto-resolution for it
-unless asked again.
+The user explicitly said (2026-09-03): **"leave [the remaining needs_review
+item] as-is for manual review for now"** — do not build further
+auto-resolution for it unless asked again. On 2026-09-04 a manual **review
+corrections mechanism** was built instead (see below) — this satisfies that
+instruction without contradicting it: it's still a human decision, never
+automated inference.
 
 ## What actually works right now
 
@@ -27,13 +44,42 @@ unless asked again.
 - `node --env-file=.env src/run-live.js` — **real** Gmail read-only pipeline
   → `output/live/loan-requests.html` (gitignored, real data). **Only run this
   when the user explicitly asks** — it's a real, if read-only, mailbox call.
-- Main table: 6 columns now — Date, Requested By, Amount, Reason, Loan Type,
-  **Status** (added today; formally revises the original "exactly 5 columns"
-  requirement, per explicit user approval)
+  Automatically detects backfill vs. normal mode from whether
+  `data/live/store.json` already exists — both paths are now proven against
+  real data.
+- Main table: 6 columns — Date, Requested By, Amount, Reason, Loan Type,
+  **Loan Status** (added 2026-09-03 as "Status", header renamed to "Loan
+  Status" 2026-09-04 per explicit user correction; formally revises the
+  original "exactly 5 columns" requirement, per explicit user approval)
 - Needs-review section: shows sender/subject/received date, whatever fields
-  DID extract, a direct "Open email" Gmail link, and the review note
+  DID extract, a direct "Open email" Gmail link, the review note, and (new
+  2026-09-04) an in-page hint on how to resolve a row via the corrections
+  file (see below)
 - Acknowledgement drafts: local `.txt` files only, never sent, gated by
   `parseStatus === "ok"` and `backfillMode`
+- **Manual review corrections** (new 2026-09-04, agreed via a grill-me
+  session): an optional, gitignored `data/live/corrections.json`, hand-edited
+  by a reviewer after opening the flagged email via "Open email", keyed by
+  the record's `sourceId`, e.g. `{"<id>": {"loanType": "Personal",
+  "correctedBy": "Name"}}`. On the next `run-live.js` run, `applyManualCorrections`
+  in `src/pipeline.js` fills only genuinely-missing fields on a
+  `needs_review` record — never overwrites an already-extracted value, never
+  touches an already-`ok` record (identical boundaries to the automatic
+  gap-fill merge). Tracked via `correctedBy`/`correctedAt`, kept deliberately
+  separate from `gapFilledFromMessageId`/`gapFilledAt` since this is a human
+  judgment call, not automated inference. Entirely optional — a missing file
+  is silently ignored, demo/test pipelines are unaffected.
+- **Hub push** (`hub-push/` folder, copied from Peries-Skills-Master, not
+  part of the 5-stage plan — a separate, already-working publishing
+  mechanism): publishes any finished output HTML file to the shared Varmen
+  AIOS hub (`varman_aios.hub_pages` table, `member_name='peries'`, viewed via
+  a Vercel-facing viewer). Has its own `package.json`/`node_modules`/`.env`
+  (`HUB_DATABASE_URL`). Run from inside `hub-push/`:
+  `node --env-file=.env push_to_hub.js "<full-path-to-html-file>" "<page-slug>" "<page-title>"`.
+  Already used to push `output/live/loan-requests.html` → slug
+  `Digit-Web-loan-requests` (hub_pages id 425). New slug per new page; reuse
+  a slug only to update that same page. `hub-push/.env` holds a live DB
+  credential — must be gitignored if this project ever becomes its own repo.
 
 ## Today's real-data findings and fixes (chronological — all in `PARSER_VERSION` history in `src/config.js`)
 
@@ -86,6 +132,105 @@ of which are correctly-excluded ordinary replies. The one remaining
 (requester or staff) ever states a type anywhere in that thread. Left for
 manual review per explicit instruction.
 
+## 2026-09-04 session — non-backfill run, name-quality fix, corrections mechanism
+
+1. **Genuine non-backfill live run, first time.** `data/live/store.json`
+   already existed from 2026-09-03's backfill runs, so `run-live.js`
+   correctly auto-detected normal mode. No new mail had arrived (same 18
+   messages, same 4 `ok` / 1 `needs_review`), but this run correctly
+   **prepared 4 acknowledgement drafts** (local `.txt` only, never sent) for
+   the 4 complete requests — the previously-unexercised "new mail" path is
+   now proven against real data, not just backfill.
+2. **v8 — "Requested By" wasn't always the full name (real bug, user-reported).**
+   Root cause: `extractRequestedBy` in `src/parser.js` always preferred the
+   email body's sign-off name over the Gmail account's From-header display
+   name. On real mail, a sign-off is often just a first name ("Kind regards,
+   Sajeepan") while the From header occasionally carries a real surname the
+   sign-off dropped entirely (evidence: sign-off "M.Manoranjani" vs. header
+   "manoranjani maheswaran" — the surname was silently lost). Fixed: now
+   picks whichever of the two candidates has more name parts (`namePartCount`);
+   ties still keep the sign-off. Covered by 2 new tests. **Applied and
+   confirmed on the real inbox the same session** — see "Open items" #1
+   below for what this surfaced (a genuine data-availability limit for 4
+   other records, not a bug).
+3. **6th column header renamed "Status" → "Loan Status"** (user correction,
+   `src/html.js`). Purely cosmetic — the underlying `record.status` field
+   name is unchanged.
+4. **New: manual review corrections mechanism** (see "What actually works
+   right now" above for the full description) — resolved via a grill-me
+   session. Decision trail, in case it's revisited:
+   - **Why build something now instead of waiting for Stage 3/4:** there was
+     already one real `needs_review` record with no resolution path except
+     staff eyeballing the email forever; Stage 4 has no timeline (externally
+     blocked); Stage 3 hasn't started.
+   - **Why a local hand-edited file instead of extending the Gmail-reply
+     gap-fill mechanism:** widening gap-fill to trust staff-written
+     business-field values was explicitly deferred on 2026-09-03 ("leave it
+     as-is for manual review for now") — reusing it for corrections would
+     have quietly walked that back. A separate local file avoids reopening
+     that decision, needs no new Gmail scope, no DB, no web server.
+   - **Why it only fills gaps, never overwrites:** mirrors the existing
+     gap-fill boundaries exactly, for the same reason — a typo in the
+     corrections file must never be able to silently corrupt a
+     correctly-extracted value.
+5. `PARSER_VERSION` is now `"v8"` — see `src/config.js` for the full
+   version-history comment block (kept as the canonical, chronological
+   record of every real-world fix).
+
+## Stage 3 — Varmen DB (drafted 2026-09-04, NOT executed, PAUSED here)
+
+Started via a grill-me session, per explicit instruction to gather context
+and stress-test before executing anything. **Paused deliberately at this
+point (2026-09-04) — the user discussed status with their supervisor and
+decided to resume the remaining steps in a future session, not this one.**
+Do not proceed to any of the "Next steps" below on your own initiative —
+wait for the user to explicitly say to pick Stage 3 back up. **Nothing has
+connected to Varmen DB. `pg` is declared in `package.json` but `npm install` was never
+run (confirmed: `node_modules/pg` does not exist).** Files written (all new,
+all inert until wired in and explicitly run):
+
+- `sql/001_create_welfare_loan_requests.sql` — the DDL. 19 columns from the
+  2026-09-03 approved plan + 5 columns added by explicit 2026-09-04 decision
+  (`loan_status`, `gap_filled_from_message_id`, `gap_filled_at`,
+  `corrected_by`, `corrected_at`) to match what the pipeline actually
+  produces now (the original plan predates the Status column and the
+  corrections mechanism).
+- `src/db.js` — connection pool + `verifyIdentity()` (the mandatory
+  pass/fail-only identity gate from the approved plan) + `withVerifiedClient()`.
+  Not imported by `src/pipeline.js` or `src/run-live.js` yet.
+- `src/db-migrate.js` — the one-time migration runner (`npm run db:migrate`).
+  Checks the `welfare` schema still exists and the table doesn't already
+  exist before running the DDL, gated by the identity check. **Not run.**
+- `.env.example` — added `VARMEN_EXPECTED_DB`/`VARMEN_EXPECTED_USER` names
+  (not values). **Real `.env` was NOT edited** — these two vars still need
+  to be added there before `db-migrate.js` could even pass the identity
+  check.
+
+**Decisions locked in during the grill session (do not re-litigate without
+new information):**
+- Execution owner: a script (`db-migrate.js`), gated by the identity check —
+  not a hand-off `.sql` file for someone else to run manually.
+- Schema-exists check happens first, at migration time, rather than trusting
+  the 2026-09-03 confirmation blindly a session later.
+- Store strategy going forward: run the JSON store and DB in parallel for a
+  verification period once this does run — no immediate cutover.
+- `updated_at`: set explicitly by application code (future `src/pg-store.js`)
+  on every upsert — no DB trigger, consistent with this codebase's no-hidden-
+  DB-logic style.
+
+**Next steps, in order, each needing separate go-ahead:**
+1. User adds `VARMEN_EXPECTED_DB`/`VARMEN_EXPECTED_USER` to real `.env`.
+2. `npm install` (adds `pg` to `node_modules` — a local package install, not
+   a DB action, but still hasn't been asked for/done).
+3. Run the schema-exists + identity check (first real DB connection) — this
+   alone needs explicit go-ahead, separate from the migration itself.
+4. Review the exact SQL in `sql/001_create_welfare_loan_requests.sql` one
+   more time.
+5. Explicit "run the migration" go-ahead → `npm run db:migrate`.
+6. Only after the table exists: build `src/pg-store.js` (mirrors
+   `src/store.js`'s interface) and wire a config flag into `runPipeline` for
+   parallel JSON+DB writes.
+
 ## Do NOT do, without the user explicitly asking again
 
 - Do **not** print, log, or write real email content (names/amounts/reasons/
@@ -94,42 +239,64 @@ manual review per explicit instruction.
 - Do **not** run `node --env-file=.env src/run-live.js` without being asked
   each time — it's a real mailbox call, even though read-only.
 - Do **not** widen the gap-filling merge to trust staff-stated business-field
-  values (e.g. a staff-mentioned loan type) — explicitly deferred today ("leave
-  it as-is for manual review for now").
-- Do **not** add `gmail.send`, touch Varmen DB, add scheduling/cron, or change
-  Google Cloud settings — none of this exists in the codebase, intentionally.
+  values (e.g. a staff-mentioned loan type) — explicitly deferred 2026-09-03
+  ("leave it as-is for manual review for now"). The 2026-09-04 corrections
+  mechanism is a deliberate, separate, human-only path — do not blur the two.
+- Do **not** add `gmail.send`, add scheduling/cron, or change Google Cloud
+  settings — none of this exists in the codebase, intentionally.
+- Do **not** run `npm install`, `npm run db:migrate`, or otherwise connect to
+  Varmen DB — `src/db.js`/`src/db-migrate.js` are drafted (2026-09-04) but
+  must stay unexecuted until each step in "Stage 3" above's next-steps list
+  is separately approved.
 - Do **not** delete `.env` or print its contents. DB credentials are already
   in there (`VARMEN_DB_*`), unused by any code.
 
-## Open items for tomorrow (in rough priority order)
+## Open items (in rough priority order)
 
-1. **Decide the next stage to work on:**
-   - Do a genuine **non-backfill** live run (both runs today were backfill
-     runs since `data/live/store.json` didn't exist yet each time — the
-     "normal" acknowledgement-drafting path for genuinely new mail has not
-     yet been exercised against real data)
-   - Or move to **Stage 3** (Varmen DB) — schema already agreed in the plan
-     file (`welfare.loan_requests`), credentials sitting in `.env` unused
-   - Or **Stage 4** is blocked until Varmen/IT confirm a server + that it's
-     internal-only (hard gate, not something to resolve alone)
-   - Or finish the **Google app verification submission** (Stage 1 loose end
-     — chosen over Testing-mode, but the actual submission — privacy policy
-     page, review — was never started; current test-user access still works
-     fine in the meantime)
-2. `GMAIL_FETCH_SINCE_DAYS` (default 30) has never been explicitly revisited
+1. **DONE 2026-09-04:** the v8 name fix was applied to the real inbox
+   (`run-live.js` re-run). Confirmed working: the one needs_review record's
+   name went from a truncated signature ("M.Manoranjani") to the full raw
+   From-header name ("manoranjani maheswaran"), since that account's From
+   field is a genuine personal name with no company branding. **BUT this
+   surfaced a real data-availability limit, not a bug** (investigated via a
+   one-off read-only script, since deleted): the other 4 "ok" records
+   (Sajeepan, Dilaksi, Jarsini, Renuha) have NO full name anywhere in Gmail
+   data at all - checked signature, From header, AND the full body text.
+   Their accounts are org-issued as `<firstname>digitweblanka@gmail.com`, no
+   real surname exists in the mailbox for them. **User's explicit decision
+   (2026-09-04) when shown this: keep the current behavior (org suffix
+   "digitweblanka"/"digitweb" stays stripped from the From header, so these
+   4 show first-name-only) and "save it for later"** - i.e. do NOT show the
+   raw From field verbatim (that would read as "Jarsini Digitweblanka",
+   implying the company name is her surname). **True full names for these
+   accounts will need an external source later (e.g. a member roster joined
+   in once Stage 3 DB exists) - not solvable from Gmail data alone. Do not
+   re-litigate this without new information.**
+2. **Stage 3 (Varmen DB) is underway — see its own section above for the
+   drafted files and the exact next-steps sequence, each needing separate
+   go-ahead.** Stage 4 remains blocked on Varmen/IT confirming a server +
+   internal-only access — worth pinging them now so it's not idle time
+   later, even while Stage 3's approval steps proceed. The Google app
+   verification submission (Stage 1 loose end) is lower priority — current
+   test-user access still works fine in the meantime.
+3. `GMAIL_FETCH_SINCE_DAYS` (default 30) has never been explicitly revisited
    as a final value — adjustable via `.env` if the user wants a different window.
-3. The user may want to review the actual real output themselves again
-   (`output/live/loan-requests.html`, `data/live/store.json`) before deciding
-   what's next — neither has been touched since the Status-column work.
+4. The one real `needs_review` record can now be resolved via
+   `data/live/corrections.json` (see mechanism above) whenever someone reads
+   the original email and decides the loan type — this is now genuinely
+   actionable, not just "left flagged."
 
 ## Quick reference — commands
 
 ```bash
-npm test                                    # 46 tests, should all pass
+npm test                                    # 52 tests, should all pass
 npm run build                               # demo pipeline (safe, no network)
 node --env-file=.env src/run-live.js        # REAL live pull - ask first
 node --env-file=.env src/gmail-auth.js      # re-auth if the refresh token ever fails
 node --env-file=.env src/gmail-calibrate.js # one-time calibration (already done; rarely needed again)
+
+# from inside hub-push/ — publish a finished output HTML file to the Varmen AIOS hub
+node --env-file=.env push_to_hub.js "<full-path-to-html-file>" "<page-slug>" "<page-title>"
 ```
 
 ## Key files
@@ -138,7 +305,8 @@ node --env-file=.env src/gmail-calibrate.js # one-time calibration (already done
 |---|---|
 | `src/config.js` | All business rules (qualifying rule, extraction patterns, status detection, ack template) - `PARSER_VERSION` history documents every real-world fix chronologically |
 | `src/parser.js` | Pure extraction logic (`parseEmail`, `extractFields`, `extractStatusFromStaffReply`) |
-| `src/pipeline.js` | Orchestration: parse → gap-fill merge → status detection → ack drafting → store → HTML |
+| `src/pipeline.js` | Orchestration: parse → gap-fill merge → manual corrections → status detection → ack drafting → store → HTML |
+| `data/live/corrections.json` | Optional, gitignored, hand-edited by a reviewer to resolve a `needs_review` record - see `applyManualCorrections` in `src/pipeline.js` |
 | `src/gmail-*.js` | Gmail-specific: auth, calibration, live fetch, message mapping, reply detection |
 | `src/html.js` | Standalone HTML renderer (6-column main table + review section) |
 | `test/pipeline.test.js` | Main test suite (demo/fixture-based) |
@@ -146,3 +314,6 @@ node --env-file=.env src/gmail-calibrate.js # one-time calibration (already done
 | `fixtures/emails/001-014*.json` | Synthetic test fixtures - each one documents (in its filename/companion test) exactly which real-world bug or rule it proves |
 | `docs/README.md` | Architecture/mapping reference (may lag slightly behind this file - trust this file for "current state") |
 | `.env` / `.env.example` | Real secrets (gitignored) / template (committed) - Gmail OAuth + Varmen DB creds, DB creds unused so far |
+| `sql/001_create_welfare_loan_requests.sql` | Drafted 2026-09-04, NOT run - see "Stage 3" section above |
+| `src/db.js` / `src/db-migrate.js` | Drafted 2026-09-04, NOT imported by the live pipeline, NOT run - see "Stage 3" section above |
+| `hub-push/` | Separate, already-working publisher: pushes a finished output HTML file to the Varmen AIOS hub (own `package.json`/`node_modules`/`.env`) - see "What actually works right now" above |

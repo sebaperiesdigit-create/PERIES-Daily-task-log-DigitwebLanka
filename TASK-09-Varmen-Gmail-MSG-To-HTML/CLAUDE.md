@@ -62,6 +62,31 @@ scheduled script, an Apps Script trigger, or a Claude Code skill invoked on dema
     fields) before any work starts; useful for turning this task's Tanglish note into a concrete plan.
   - `grill-me` — stress-tests a plan/design one question at a time before committing to it.
 
+## Hub push
+
+There is a `hub-push/` folder in this project root (copied from
+Peries-Skills-Master's `output/skill-documentation/push_to_hub.js`) for
+publishing a finished output HTML file to the Varmen AIOS hub — a
+Postgres-backed table (`varman_aios.hub_pages`, `member_name='peries'`) with
+a Vercel-facing viewer. It contains `push_to_hub.js`, its own
+`package.json`/`package-lock.json`/`node_modules` (with `pg` installed), and
+a `.env` holding `HUB_DATABASE_URL`.
+
+Usage (run from inside `hub-push/`):
+
+```
+node --env-file=.env push_to_hub.js "<full-path-to-html-file>" "<page-slug>" "<page-title>"
+```
+
+Already pushed: `output/live/loan-requests.html` → slug
+`Digit-Web-loan-requests`, title "Digit Web Loan Requests" (hub_pages id
+425), live at `varman-aios-hub-varmens.vercel.app/view/hub_pages/Digit-Web-loan-requests`.
+
+Rules: use a new slug for a new page, reuse a slug only to update that same
+page; never hardcode or print the DB password outside `hub-push/.env`; if
+this project ever becomes a git repo, add `hub-push/.env` to `.gitignore`
+before the first commit.
+
 ## Repository context
 
 This folder is one of several sibling `Task-NN-*` project directories inside the parent

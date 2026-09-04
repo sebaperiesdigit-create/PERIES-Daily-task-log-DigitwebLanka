@@ -38,7 +38,15 @@ import { isReplyMessage } from "./gmail-reply-marker.js";
 // to it afterward (staff often reply "scheduled for <Month>"). Formally
 // revises the "exactly 5 columns" requirement. See statusStaffAddress /
 // statusScheduledPattern below and src/pipeline.js `detectLoanStatus`.
-export const PARSER_VERSION = "v7";
+// v8 (2026-09-04): fixed by real "Requested By" evidence - the user pointed
+// out a stored name wasn't the requester's full name. Root cause: the
+// sign-off name was always preferred over the From header's display name,
+// but a sign-off is often just a first name ("Kind regards, Sajeepan") while
+// the From header occasionally carries a real surname the sign-off omits
+// (sign-off "M.Manoranjani" vs header "manoranjani maheswaran"). Now picks
+// whichever of the two has more name parts. See `extractRequestedBy` in
+// src/parser.js.
+export const PARSER_VERSION = "v8";
 
 // Exported separately from `isQualifying` so src/pipeline.js can reuse the
 // exact same "does this subject even look loan-related" check when deciding
