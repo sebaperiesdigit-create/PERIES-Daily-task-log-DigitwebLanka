@@ -1,26 +1,46 @@
 # Task 09 — Handover (last updated 2026-09-04, end of session)
 
-## ⚠️ `data/live/corrections.json` now exists with PLACEHOLDER text - do not run-live.js until filled in
+## ✅ ALL 13 REAL RECORDS NOW RESOLVED — 13 ok / 0 needs_review
 
-Created 2026-09-04 with entries for the 2 remaining needs_review records
-(both missing ONLY `reason` - Requested By/Amount/Loan Type all already
-extracted fine):
-```json
-{
-  "19bbb25a2722f687": { "reason": "<read the email and fill this in>", "correctedBy": "Your Name" },
-  "19bbb061e8835831": { "reason": "<read the email and fill this in>", "correctedBy": "Your Name" }
-}
-```
-**The corrections mechanism does not validate text - it fills in whatever
-is there.** If `run-live.js` runs while the literal placeholder string is
-still in this file, that placeholder text itself would get stored as the
-real `reason` value, marked as corrected. **Before the next live run**,
-the user needs to open each record's "Open email" link, read the real
-reason, and replace the placeholder - or remove an entry entirely if not
-ready to resolve it yet. Do not run `run-live.js` on the user's behalf
-without checking this file no longer contains the placeholder text for
-any entry still present in it. File is gitignored (`/data/live/`),
-confirmed via `git check-ignore`.
+Per explicit user instruction ("fill in the corrections and run it"):
+since these were the last 2 unresolved fields and the user directed this
+session specifically to do it, fetched the 2 exact real messages (a
+one-off, read-only Gmail call by message ID - script written, used, then
+deleted immediately, same pattern as every other investigative script
+this session), read the real stated reason from each (not guessed -
+transcribed from the actual email text), and replaced the placeholders in
+`data/live/corrections.json`:
+- `19bbb25a2722f687` (Mahima, educational loan): reason was stated as the
+  leading clause with no trigger phrase at all ("I am currently pursuing
+  further education and would like to request...") → corrections.json
+  `reason: "Pursuing further education."`
+- `19bbb061e8835831` (Sanjutha, wedding loan): reason was "...for my
+  wedding, which is scheduled for March 16th" → corrections.json
+  `reason: "My wedding, scheduled for March 16th."`
+- `correctedBy` on both: `"Claude Code (read original email, per user
+  instruction 2026-09-04)"` - explicit provenance that this was read and
+  filled in by the assistant at the user's direction, not a first-party
+  staff review, in case that distinction matters later.
+
+Ran `node --env-file=.env src/run-live.js` (normal mode, no special
+flags) - the corrections mechanism pulls in a targeted needs_review record
+from the store regardless of whether it's in this run's fetch window, so
+this worked even though both records are months outside the normal 30-day
+window. **Result: store now has 13 records, all `ok`, zero
+needs_review.** Verified via a read-only query: 13/13 `parse_status =
+'ok'` in `welfare.loan_requests`, both corrected records show the
+`corrected_by`/`corrected_at` provenance above.
+
+Acknowledgement drafts went from 4 to 7 (+3, draft-only, never sent): the
+2 newly-corrected records, plus 1 previously-undrafted "ok" record within
+this run's 30-day fetch window that had never been through a non-backfill
+run before now (every real run since the v9 historical pull was
+forced-backfill, which skips ack drafting entirely) - expected, not a bug.
+
+`data/live/corrections.json` still exists on disk (gitignored) with these
+2 now-resolved entries - harmless to leave as-is (the mechanism only
+touches needs_review records, and there are none left), but fine to clear
+out whenever convenient.
 
 ## ✅ v10 + v11 + v12: three rounds of REAL bugs found by the user reviewing actual output, all fixed and re-applied
 
