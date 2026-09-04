@@ -55,12 +55,22 @@ function findAllMatches(text, pattern) {
   return [...text.matchAll(new RegExp(pattern.source, flags))];
 }
 
+/** "100000" -> "100,000" - comma-grouped digits, no other formatting. */
+function addThousandsCommas(digits) {
+  return digits.replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+}
+
 /**
  * Currency-prefixed pattern first (exactly one distinct match required);
  * falls back to a narrowly-anchored bare number (also exactly one distinct
  * match, within a realistic digit-length range). Any ambiguity - zero matches,
  * multiple different amounts, or an out-of-range bare number - returns null
  * rather than guessing which value is correct.
+ *
+ * v9 (2026-09-04): a bare-number match (no currency prefix in the original
+ * text) is now normalized to "LKR <comma-grouped digits>" rather than
+ * stored as raw digits - e.g. "100000" -> "LKR 100,000". A currency-
+ * prefixed match is stored exactly as captured, unchanged.
  */
 function extractAmount(newText, config) {
   const [currencyPattern, bareNumberPattern] = config.amountPatterns;
@@ -78,22 +88,110 @@ function extractAmount(newText, config) {
       return len >= min && len <= max;
     });
   const uniqueBare = [...new Set(bareMatches)];
-  if (uniqueBare.length === 1) return uniqueBare[0];
+  if (uniqueBare.length === 1) return `LKR ${addThousandsCommas(uniqueBare[0].replace(/,/g, ""))}`;
 
   return null;
 }
 
-/** Loan Type is derived from the subject line only - never the body. */
-function extractLoanType(subject, config) {
-  const lower = (subject || "").toLowerCase();
+/** Subject-only: a bare word match is fine here (subjects are short and deliberate, e.g. "Personal Loan Request"). */
+export function scanLoanTypeKeywords(text, config) {
+  const lower = (text || "").toLowerCase();
   for (const [keyword, label] of config.loanTypeKeywords) {
     if (lower.includes(keyword)) return label;
   }
   return null;
 }
 
-/** Only captures text right after an approved trigger phrase - never inferred from surrounding prose. */
+/**
+ * Body/staff-reply text: DELIBERATELY stricter than scanLoanTypeKeywords -
+ * requires "<type> loan" (e.g. "medical loan"), not a bare word. See
+ * config.js loanTypeBodyPhrases: a bare-word body scan real-bug-matched
+ * "welfare" inside every email's own "Dear Welfare Team," greeting.
+ */
+function scanLoanTypeBodyPhrases(text, config) {
+  const lower = (text || "").toLowerCase();
+  for (const [phrase, label] of config.loanTypeBodyPhrases ?? []) {
+    if (lower.includes(phrase)) return label;
+  }
+  return null;
+}
+
+/** Infers a Loan Type from the Reason text alone - last resort before defaulting. See config.js loanTypeReasonKeywords. */
+function inferLoanTypeFromReason(reason, config) {
+  if (!reason) return null;
+  const lower = reason.toLowerCase();
+  for (const [keywords, label] of config.loanTypeReasonKeywords ?? []) {
+    if (keywords.some((kw) => lower.includes(kw))) return label;
+  }
+  return null;
+}
+
+const GENERIC_LOAN_TYPE = "Personal";
+
+/**
+ * Resolves Loan Type from the requester's OWN subject + body + reason only
+ * - CONFIRMED 2026-09-04 (grill-me session), reverses the earlier "never
+ * guess, leave blank" rule for this one field. See PARSER_VERSION v9 notes
+ * in config.js for the full rationale.
+ *
+ * REVISED after a real regression was caught in testing: an EXPLICIT
+ * statement (subject keyword match, OR a body "<type> loan" phrase) is
+ * ALWAYS authoritative and final - including an explicit "Personal" -
+ * never second-guessed by reason-inference. The original design treated
+ * "Personal" as a weak/generic default even when explicitly, deliberately
+ * stated (e.g. subject "Personal Loan Request" AND body "a personal loan
+ * of..."), which let a merely-circumstantial reason ("...due to urgent
+ * medical expenses") silently override two explicit statements to
+ * "Medical" - wrong. Reason-inference and the "Personal" default now ONLY
+ * apply when NEITHER subject NOR body gives any explicit signal at all.
+ *
+ * Priority: subject match (any) -> body phrase match (any) ->
+ * reason-inference -> default "Personal" (no signal anywhere). A
+ * subject/body disagreement (each explicitly naming a different type) still
+ * keeps the subject's value but is flagged via `discrepancyNote` rather
+ * than silently dropped - informational only, never overrides.
+ *
+ * Does NOT consider staff-reply text - a single email's own extraction has
+ * no visibility into other messages in the thread. See
+ * `applyStaffConfirmationDetails` in src/pipeline.js for the thread-level
+ * staff-reply upgrade step that runs after this (which itself only
+ * upgrades a "default_no_signal"-sourced "Personal", never an explicit one).
+ */
+function resolveOwnLoanType({ subject, bodyText, reason, config }) {
+  const subjectType = scanLoanTypeKeywords(subject, config);
+  const bodyType = scanLoanTypeBodyPhrases(bodyText, config);
+
+  if (subjectType) {
+    const discrepancyNote =
+      bodyType && bodyType !== subjectType
+        ? `Body text suggests loan type "${bodyType}" but the subject explicitly says "${subjectType}" - kept the subject's value.`
+        : null;
+    return { loanType: subjectType, loanTypeSource: "subject", discrepancyNote };
+  }
+  if (bodyType) {
+    return { loanType: bodyType, loanTypeSource: "body", discrepancyNote: null };
+  }
+
+  const reasonType = inferLoanTypeFromReason(reason, config);
+  if (reasonType) {
+    return { loanType: reasonType, loanTypeSource: "reason_inference", discrepancyNote: null };
+  }
+
+  return { loanType: GENERIC_LOAN_TYPE, loanTypeSource: "default_no_signal", discrepancyNote: null };
+}
+
+/**
+ * Only captures text right after an approved trigger phrase - never inferred
+ * from surrounding prose. v9 (2026-09-04): result is cosmetically formatted
+ * before returning - first letter capitalized, a trailing period added if
+ * missing. Extraction boundaries (WHAT gets captured) are unchanged.
+ */
 function extractReason(newText, config) {
+  const raw = extractRawReason(newText, config);
+  return raw ? formatReasonText(raw) : null;
+}
+
+function extractRawReason(newText, config) {
   for (const phrase of config.reasonTriggerPhrases) {
     const re = new RegExp(`${escapeRegExp(phrase)}\\s+([^.\\r\\n!?]+)`, "i");
     const match = re.exec(newText);
@@ -112,6 +210,11 @@ function extractReason(newText, config) {
     }
   }
   return null;
+}
+
+function formatReasonText(reason) {
+  const capitalized = reason.charAt(0).toUpperCase() + reason.slice(1);
+  return /[.!?]$/.test(capitalized) ? capitalized : `${capitalized}.`;
 }
 
 /**
@@ -172,8 +275,9 @@ function extractRequestedBy(newText, fromHeader, config) {
   return signOffName ?? headerName ?? null;
 }
 
-function namePartCount(name) {
-  return name.split(/\s+/).filter(Boolean).length;
+/** Exported so src/pipeline.js can compare a staff-reply-stated name against the current value too. */
+export function namePartCount(name) {
+  return name ? name.split(/\s+/).filter(Boolean).length : 0;
 }
 
 /** True if the sender's new text contains any configured correction/follow-up signal phrase. */
@@ -206,6 +310,61 @@ export function extractStatusFromStaffReply(staffEmail, config) {
 }
 
 /**
+ * BEST-EFFORT heuristic (2026-09-04) - tries "Dear <Name>," first (staff
+ * replies are addressed TO the requester, so this greeting is expected to
+ * name them), falling back to the first capitalized 2+-word phrase that
+ * isn't a known non-name word. See config.js staffNameGreetingPattern/
+ * staffNameExcludedWords for why this is provisional: unlike the
+ * requester-side name patterns, there's no real calibration data for how
+ * staff actually phrase a confirmation reply.
+ */
+function extractStaffStatedName(newText, config) {
+  const greetingMatch = config.staffNameGreetingPattern.exec(newText);
+  if (greetingMatch) {
+    const name = cleanExtractedName(greetingMatch[1].trim(), config);
+    if (name.length > 0 && name.length < 80) return name;
+  }
+
+  const excluded = new Set((config.staffNameExcludedWords ?? []).map((w) => w.toLowerCase()));
+  const candidateRe = /\b([A-Z][a-zA-Z.]{1,20}(?:\s+[A-Z][a-zA-Z.]{1,20}){1,3})\b/g;
+  for (const m of newText.matchAll(candidateRe)) {
+    const phrase = m[1].trim();
+    const firstWord = phrase.split(/\s+/)[0].toLowerCase();
+    if (excluded.has(firstWord)) continue;
+    const cleaned = cleanExtractedName(phrase, config);
+    if (cleaned.length > 0) return cleaned;
+  }
+  return null;
+}
+
+/**
+ * Extracts whatever business-field-like CANDIDATES can be found in a STAFF
+ * reply's own text (quoted history stripped, hard-wraps unwrapped - same
+ * treatment as the requester's own email). CONFIRMED 2026-09-04 (grill-me
+ * session) as the third gap-filling data source, alongside the same-sender
+ * gap-fill merge and manual corrections. This function only extracts
+ * candidates - it does NOT decide whether/how to apply them; see
+ * `applyStaffConfirmationDetails` in src/pipeline.js for the precedence
+ * rules (fill-only for Amount/Reason, fullest-name-wins for Requested By,
+ * generic-Personal-upgrade-only for Loan Type).
+ *
+ * Reuses the exact same Amount/Reason patterns as the requester-side
+ * extraction (staff restating "LKR 100,000" or "due to medical expenses"
+ * looks the same either way) - only the name heuristic and loan-type scan
+ * differ, since staff replies don't have their own meaningfully-different
+ * "subject" (Gmail keeps the original "Re: <subject>").
+ */
+export function extractStaffConfirmationDetails(staffEmail, config) {
+  const newText = unwrapHardLineWraps(stripQuotedHistory(staffEmail.bodyText));
+  return {
+    requestedBy: extractStaffStatedName(newText, config),
+    amount: extractAmount(newText, config),
+    reason: extractReason(newText, config),
+    loanType: scanLoanTypeBodyPhrases(newText, config),
+  };
+}
+
+/**
  * Extracts the 4 business fields from an email, WITHOUT the qualifying gate -
  * pure extraction, usable on any email shape (including a reply that
  * config.isQualifying would exclude from becoming its own record). Used by
@@ -215,11 +374,20 @@ export function extractStatusFromStaffReply(staffEmail, config) {
  */
 export function extractFields(email, config) {
   const newText = unwrapHardLineWraps(stripQuotedHistory(email.bodyText));
+  const reason = extractReason(newText, config);
+  const { loanType, loanTypeSource, discrepancyNote } = resolveOwnLoanType({
+    subject: email.subject,
+    bodyText: newText,
+    reason,
+    config,
+  });
   return {
     requestedBy: extractRequestedBy(newText, email.from, config),
     amount: extractAmount(newText, config),
-    reason: extractReason(newText, config),
-    loanType: extractLoanType(email.subject, config),
+    reason,
+    loanType,
+    loanTypeSource,
+    discrepancyNote,
   };
 }
 
@@ -274,6 +442,8 @@ export function parseEmail(email, config) {
     date,
     requestedBy: extracted.requestedBy,
     amount: extracted.amount,
+    loanTypeSource: extracted.loanTypeSource,
+    discrepancyNote: extracted.discrepancyNote,
     reason: extracted.reason,
     loanType: extracted.loanType,
   };

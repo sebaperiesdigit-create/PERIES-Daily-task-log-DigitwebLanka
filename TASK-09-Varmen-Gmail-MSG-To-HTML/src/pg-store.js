@@ -40,6 +40,12 @@ const FIELD_TO_COLUMN = {
   gapFilledAt: "gap_filled_at",
   correctedBy: "corrected_by",
   correctedAt: "corrected_at",
+  // v9 (2026-09-04) - see sql/002_add_v9_columns.sql (drafted, NOT run yet
+  // against the real table - see docs/HANDOVER.md Stage 3 section).
+  loanTypeSource: "loan_type_source",
+  discrepancyNote: "discrepancy_note",
+  staffConfirmedFromMessageId: "staff_confirmed_from_message_id",
+  staffConfirmedAt: "staff_confirmed_at",
   ack_status: "ack_status",
   ack_source_message_id: "ack_source_message_id",
   ack_thread_id: "ack_thread_id",
@@ -60,6 +66,7 @@ const TIMESTAMP_COLUMNS = new Set([
   "gap_filled_at",
   "corrected_at",
   "ack_prepared_at",
+  "staff_confirmed_at",
   "created_at",
   "updated_at",
 ]);

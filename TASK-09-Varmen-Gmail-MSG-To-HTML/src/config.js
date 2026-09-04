@@ -46,7 +46,54 @@ import { isReplyMessage } from "./gmail-reply-marker.js";
 // (sign-off "M.Manoranjani" vs header "manoranjani maheswaran"). Now picks
 // whichever of the two has more name parts. See `extractRequestedBy` in
 // src/parser.js.
-export const PARSER_VERSION = "v8";
+// v9 (2026-09-04): the user reported real requests missing from the live
+// table, which led to fixing the 30-day fetch window (see
+// src/gmail-fetch.js) - and, while reviewing the resulting wider dataset,
+// requested several deliberate policy changes, agreed via a grill-me
+// session:
+//   - Staff confirmation replies (any reply from statusStaffAddress in the
+//     thread) become a THIRD gap-filling data source, alongside the
+//     existing same-sender gap-fill and manual corrections file. Amount/
+//     Reason: fills a genuine gap only, never overwrites the requester's
+//     own stated value - a disagreement is flagged (discrepancyNote), never
+//     silently applied. Requested By: a fuller name from staff joins the
+//     existing "most name parts wins" comparison, and CAN replace an
+//     already-set shorter name (even on an already-"ok" record) - a name
+//     isn't a negotiable business fact the way an amount is. See
+//     `applyStaffConfirmationDetails` in src/pipeline.js.
+//   - Loan Type formally REVERSES the earlier "never guess, always leave
+//     blank" rule for this one field only: now checks both subject AND
+//     body (not subject-only), then infers from the Reason text, and
+//     finally defaults to "Personal" as a last resort - meaning this field
+//     can no longer cause a record to land in needs_review. See
+//     `resolveOwnLoanType` in src/parser.js.
+//     CAUGHT AND FIXED DURING TESTING: the first version treated "Personal"
+//     as a generic/common label even when EXPLICITLY, deliberately stated
+//     (e.g. subject "Personal Loan Request" AND body "a personal loan
+//     of...") - which let a merely-circumstantial Reason ("...due to urgent
+//     medical expenses") silently override two explicit statements to
+//     "Medical". Fixed: an explicit statement (subject keyword match, OR a
+//     body "<type> loan" phrase - see `loanTypeBodyPhrases` below) is now
+//     ALWAYS final, including an explicit "Personal" - reason-inference and
+//     the "Personal" default only apply when NEITHER subject NOR body gives
+//     any signal at all. A subject/body disagreement (each naming a
+//     different type) still keeps the subject's value but is flagged via
+//     `discrepancyNote`, informational only, never overriding.
+//     ALSO CAUGHT DURING TESTING: a bare-word body scan real-bug-matched
+//     "welfare" inside every email's own "Dear Welfare Team," greeting -
+//     `loanTypeBodyPhrases` requires "<type> loan" specifically, not a bare
+//     word, to avoid this.
+//     `loanTypeReasonKeywords` below is deliberately conservative (no vague
+//     words like "urgent") - two real "ok" records already say "an urgent
+//     personal matter" and must keep resolving to Personal (via the
+//     no-signal default), not get reclassified to Emergency.
+//   - Amount: a bare number with no currency prefix (e.g. "100000") is now
+//     normalized to "LKR 100,000" (comma-formatted) instead of stored as
+//     bare digits.
+//   - Reason: cosmetic-only formatting - capitalized first letter, a
+//     trailing period added if missing. Extraction boundaries (which text
+//     gets captured) are unchanged.
+export const PARSER_VERSION = "v9";
 
 // Exported separately from `isQualifying` so src/pipeline.js can reuse the
 // exact same "does this subject even look loan-related" check when deciding
@@ -122,6 +169,55 @@ export const config = {
     ["emergency", "Emergency"],
     ["welfare", "Welfare"],
     ["general", "General"],
+  ],
+
+  // Body-level Loan Type keywords (v9, 2026-09-04) - DELIBERATELY
+  // DIFFERENT from loanTypeKeywords above (which stays subject-only, bare
+  // word match): a bare "welfare"/"personal" match against body PROSE is
+  // unreliable - real bug caught in testing, every email's own standard
+  // greeting is "Dear Welfare Team," which would otherwise false-positive
+  // match "Welfare" on nearly every message. Requires the type word to
+  // appear immediately next to "loan" (e.g. "medical loan", "welfare
+  // loan") - a real, deliberate statement of type, not incidental prose.
+  loanTypeBodyPhrases: [
+    ["personal loan", "Personal"],
+    ["education loan", "Education"],
+    ["medical loan", "Medical"],
+    ["emergency loan", "Emergency"],
+    ["welfare loan", "Welfare"],
+    ["general loan", "General"],
+  ],
+
+  // Reason-based Loan Type inference - LAST resort before defaulting to
+  // "Personal" (v9, 2026-09-04). Deliberately CONSERVATIVE: only strong,
+  // specific words trigger a match. "urgent" is NOT included anywhere -
+  // two real "ok" records say "an urgent personal matter" and must keep
+  // resolving to Personal (their actual, explicitly-stated subject type),
+  // not get silently reclassified to Emergency just because "urgent"
+  // sounds emergency-adjacent. See resolveOwnLoanType in src/parser.js.
+  loanTypeReasonKeywords: [
+    [["hospital", "surgery", "medical treatment", "medical expenses", "doctor", "clinic", "illness"], "Medical"],
+    [["school fees", "tuition", "university", "college", "education expenses", "studies"], "Education"],
+    [["emergency"], "Emergency"],
+    [["welfare"], "Welfare"],
+  ],
+
+  // Staff-reply name extraction (v9, 2026-09-04) - BEST-EFFORT HEURISTIC.
+  // Unlike the requester-side patterns above (calibrated against real
+  // samples), there is no calibration data for how staff phrase a
+  // confirmation reply - this pattern is provisional and may need
+  // adjusting once real staff-reply output has actually been reviewed.
+  // Staff replies are addressed TO the requester, so a "Dear <Name>,"
+  // greeting is expected to name the requester, not staff themselves.
+  staffNameGreetingPattern: /\bDear\s+([A-Z][a-zA-Z.]{1,30}(?:\s+[A-Z][a-zA-Z.]{1,30}){0,3})\s*[,:]/,
+
+  // Fallback word list for the staff-reply name heuristic - capitalized
+  // multi-word phrases that are clearly NOT a person's name (the org's own
+  // name, common greeting/sign-off words) are excluded from consideration.
+  staffNameExcludedWords: [
+    "dear", "kind", "best", "welfare", "team", "loan", "personal", "request",
+    "please", "thank", "thanks", "regards", "digitweb", "lanka", "society",
+    "sincerely", "hi", "hello",
   ],
 
   // Reason: only captured immediately after one of these exact phrases, up to

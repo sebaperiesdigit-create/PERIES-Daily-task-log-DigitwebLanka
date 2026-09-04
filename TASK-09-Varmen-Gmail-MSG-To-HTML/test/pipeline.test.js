@@ -41,7 +41,7 @@ test("qualifying fixture creates exactly one correct visible table row", () => {
   assert.equal(ok[0].date, "2026-08-20");
   assert.equal(ok[0].requestedBy, "Test Requester A");
   assert.equal(ok[0].amount, "LKR 50,000");
-  assert.equal(ok[0].reason, "urgent medical expenses");
+  assert.equal(ok[0].reason, "Urgent medical expenses.");
   assert.equal(ok[0].loanType, "Personal");
 
   assert.match(html, /<td>2026-08-20<\/td>/);
@@ -82,7 +82,7 @@ test("missing amount goes to needs_review, not the main table, and does not corr
   assert.equal(missingAmount.amount, null, "must not invent a missing amount");
   // Other fields still extracted correctly - only amount is the problem.
   assert.equal(missingAmount.requestedBy, "Test Requester D");
-  assert.equal(missingAmount.reason, "urgent medical expenses");
+  assert.equal(missingAmount.reason, "Urgent medical expenses.");
   assert.equal(missingAmount.loanType, "Personal");
 
   // Not present as a main-table row.
@@ -131,7 +131,7 @@ test("review-section rows are now staff-usable: sender/subject shown, a Gmail li
   assert.match(html, /test\.requester\.d@example-welfare\.test/i, "sender must be shown for triage");
   assert.match(html, /Personal Loan Request/, "subject must be shown for triage");
   assert.match(html, /<strong>Requested By:<\/strong> Test Requester D/, "successfully-extracted fields must be shown");
-  assert.match(html, /<strong>Reason:<\/strong> urgent medical expenses/);
+  assert.match(html, /<strong>Reason:<\/strong> Urgent medical expenses\./);
 
   // Direct Gmail link built from the real source id, opens in a new tab safely.
   assert.match(html, /href="https:\/\/mail\.google\.com\/mail\/u\/0\/#all\/fixture-msg-0003"/);
@@ -289,18 +289,23 @@ test("isQualifying excludes Re:/Fwd: subjects and bodies containing Gmail's quot
   assert.equal(config.isQualifying({ subject: "Personal Loan Request", bodyText: "A fresh request." }), true);
 });
 
-test("generic 'Loan Request' subject (no type keyword) becomes needs_review", () => {
+test("v9: generic 'Loan Request' subject (no type keyword, no reason signal) now defaults to Personal and becomes ok", () => {
+  // REVERSED 2026-09-04 (grill-me session): Loan Type used to stay null
+  // here and force needs_review. Now it falls all the way through the
+  // subject -> body -> reason-inference chain, finds nothing at any step
+  // ("home repairs" matches none of the conservative reason keywords), and
+  // defaults to "Personal" - loanTypeSource records that this was a
+  // no-signal default, not something the requester actually stated.
   const ws = freshWorkspace();
   const { allRecords } = runPipeline({ fixturesDir, ...ws });
 
   const generic = allRecords.find((r) => r.sourceId === "fixture-msg-0006");
   assert.ok(generic);
-  assert.equal(generic.parseStatus, "needs_review");
-  assert.equal(generic.loanType, null, "must not default to a type the subject doesn't state");
-  assert.match(generic.reviewNotes, /loanType/i);
-  // Other fields still extracted fine.
+  assert.equal(generic.parseStatus, "ok");
+  assert.equal(generic.loanType, "Personal");
+  assert.equal(generic.loanTypeSource, "default_no_signal");
   assert.equal(generic.amount, "LKR 40,000");
-  assert.equal(generic.reason, "home repairs");
+  assert.equal(generic.reason, "Home repairs.");
 });
 
 test("an ambiguous bare number (multiple plausible amounts) becomes needs_review", () => {
@@ -341,7 +346,7 @@ test("a hard line-wrap mid-sentence does not truncate the reason (real bug: real
   const wrapped = allRecords.find((r) => r.sourceId === "fixture-msg-0010");
   assert.ok(wrapped);
   assert.equal(wrapped.parseStatus, "ok");
-  assert.equal(wrapped.reason, "an urgent personal matter", "must not be truncated to just 'an'");
+  assert.equal(wrapped.reason, "An urgent personal matter.", "must not be truncated to just 'an'");
   assert.equal(wrapped.requestedBy, "Test Requester I");
   assert.equal(wrapped.amount, "LKR 100,000");
 });
@@ -406,7 +411,7 @@ test("correction/follow-up wording forces needs_review even with all 4 fields ex
   assert.ok(correction);
   // All 4 fields WOULD have extracted cleanly on their own.
   assert.equal(correction.amount, "LKR 60,000");
-  assert.equal(correction.reason, "medical bills");
+  assert.equal(correction.reason, "Medical bills.");
   assert.equal(correction.requestedBy, "Test Requester E");
   assert.equal(correction.loanType, "Personal");
   // But the correction/follow-up safeguard still forces review.
@@ -462,7 +467,7 @@ test("a same-sender, same-thread reply fills a genuinely missing field and compl
   assert.equal(target.parseStatus, "ok", "the gap-filled amount completes the request");
   assert.equal(target.amount, "LKR 35,000");
   assert.equal(target.requestedBy, "Test Requester J"); // from the original, untouched
-  assert.equal(target.reason, "urgent medical expenses"); // from the original, untouched
+  assert.equal(target.reason, "Urgent medical expenses."); // from the original, untouched
   assert.equal(target.gapFilledFromMessageId, "fixture-msg-0012");
   assert.ok(target.gapFilledAt);
 
@@ -472,17 +477,23 @@ test("a same-sender, same-thread reply fills a genuinely missing field and compl
 });
 
 test("gap-filling never overwrites a field that was already successfully extracted", () => {
+  // v9: Loan Type can no longer be the "genuinely missing" field (it always
+  // resolves - subject/body/reason-inference/default) - Reason takes over
+  // that role here instead: no reason-trigger phrase anywhere in the body,
+  // so it stays genuinely missing, while amount/requestedBy/loanType all
+  // extract fine (this is what boundary 1 below is protecting).
   const ws = freshWorkspace();
   const originalEmail = {
     id: "gapfill-noverwrite-1",
     threadId: "gapfill-noverwrite-1",
     from: "Someone <someone@example-welfare.test>",
-    subject: "Loan Request", // deliberately generic - no type keyword, so loanType stays missing
+    subject: "Loan Request", // deliberately generic - no type keyword in subject
     receivedAt: "2026-08-25T09:00:00+05:30",
-    bodyText: "Dear Welfare Team,\r\n\r\nI would like to request LKR 20,000 due to urgent needs.\r\n\r\nKind regards,\r\nSomeone\r\n",
-    // amount/reason/requestedBy all extract fine here; only loanType is
-    // genuinely missing - so this record IS needs_review (eligible for
-    // gap-filling per boundary 2), but amount is already set (testing
+    bodyText: "Dear Welfare Team,\r\n\r\nI would like to request LKR 20,000 for my personal needs.\r\n\r\nKind regards,\r\nSomeone\r\n",
+    // amount/requestedBy extract fine; loanType resolves via the body's
+    // "personal" keyword; reason has no trigger phrase anywhere, so it's
+    // the one genuinely missing field (needs_review, eligible for
+    // gap-filling per boundary 2) - amount is already set (testing
     // boundary 1: the reply's different amount must not touch it).
   };
   const replyEmail = {
@@ -492,15 +503,16 @@ test("gap-filling never overwrites a field that was already successfully extract
     subject: "Re: Loan Request",
     receivedAt: "2026-08-25T09:14:00+05:30",
     bodyText:
-      "Actually please make it LKR 99,999 instead.\r\n\r\nKind regards,\r\nSomeone\r\n\r\nOn Mon, Aug 25, 2026 at 9:00 AM Someone <someone@example-welfare.test> wrote:\r\n> Dear Welfare Team,\r\n> I would like to request LKR 20,000 due to urgent needs.\r\n>\r\n> Kind regards,\r\n> Someone\r\n",
+      "Actually please make it LKR 99,999 instead.\r\n\r\nKind regards,\r\nSomeone\r\n\r\nOn Mon, Aug 25, 2026 at 9:00 AM Someone <someone@example-welfare.test> wrote:\r\n> Dear Welfare Team,\r\n> I would like to request LKR 20,000 for my personal needs.\r\n>\r\n> Kind regards,\r\n> Someone\r\n",
   };
   const { allRecords } = runPipeline({ emails: [originalEmail, replyEmail], ...ws });
 
   const target = allRecords.find((r) => r.sourceId === "gapfill-noverwrite-1");
   assert.ok(target);
-  assert.equal(target.parseStatus, "needs_review", "sanity check: still missing loanType, so still eligible for merge");
+  assert.equal(target.parseStatus, "needs_review", "sanity check: still missing reason, so still eligible for merge");
   assert.equal(target.amount, "LKR 20,000", "the reply's different amount must NEVER overwrite the original's");
-  assert.equal(target.loanType, null, "the reply's own subject/type is irrelevant - it only fills genuine gaps");
+  assert.equal(target.reason, null, "the reply's own text is irrelevant here - it only fills genuine gaps, and never even offered a reason");
+  assert.equal(target.loanType, "Personal");
 });
 
 test("gap-filling never applies from a different sender (e.g. staff replying in the thread)", () => {
@@ -625,6 +637,235 @@ test("a missing corrections file is silently ignored (the mechanism is entirely 
   assert.equal(stillReview.parseStatus, "needs_review");
 });
 
+// --- v9: Loan Type resolution + staff confirmation replies (2026-09-04) ----------
+
+test("Amount: a bare number with no currency prefix is normalized to \"LKR <comma-grouped digits>\"", () => {
+  const email = {
+    id: "bare-amount-1",
+    threadId: "bare-amount-1",
+    from: "Someone <someone@example-welfare.test>",
+    subject: "Personal Loan Request",
+    receivedAt: "2026-08-30T09:00:00+05:30",
+    bodyText: "Dear Welfare Team,\r\n\r\nI would like to request a loan of 250000 due to urgent needs.\r\n\r\nKind regards,\r\nSomeone\r\n",
+  };
+  const record = parseEmail(email, config);
+  assert.equal(record.amount, "LKR 250,000");
+});
+
+test("Loan Type: an explicit subject+body \"personal loan\" statement is never overridden by reason-inference (real regression, fixed 2026-09-04)", () => {
+  // The exact bug: subject "Personal Loan Request" + body "a personal loan
+  // of..." are two explicit, deliberate statements - a reason that happens
+  // to mention "medical expenses" must NOT silently reclassify this as
+  // Medical. This is fixture-msg-0001's real shape.
+  const email = {
+    id: "explicit-personal-1",
+    threadId: "explicit-personal-1",
+    from: "Someone <someone@example-welfare.test>",
+    subject: "Personal Loan Request",
+    receivedAt: "2026-08-30T09:00:00+05:30",
+    bodyText:
+      "Dear Welfare Team,\r\n\r\nI would like to kindly request a personal loan of LKR 50,000 due to urgent medical expenses.\r\n\r\nKind regards,\r\nSomeone\r\n",
+  };
+  const record = parseEmail(email, config);
+  assert.equal(record.loanType, "Personal");
+  assert.equal(record.loanTypeSource, "subject");
+});
+
+test("Loan Type: body \"<type> loan\" phrase resolves it when the subject gives no keyword", () => {
+  const email = {
+    id: "body-loan-type-1",
+    threadId: "body-loan-type-1",
+    from: "Someone <someone@example-welfare.test>",
+    subject: "Loan Request", // deliberately generic
+    receivedAt: "2026-08-30T09:00:00+05:30",
+    bodyText: "Dear Welfare Team,\r\n\r\nI would like to request a medical loan of LKR 80,000.\r\n\r\nKind regards,\r\nSomeone\r\n",
+  };
+  const record = parseEmail(email, config);
+  assert.equal(record.loanType, "Medical");
+  assert.equal(record.loanTypeSource, "body");
+});
+
+test("Loan Type: a bare 'welfare'/'personal' word in ordinary body prose does NOT false-positive match (real bug: every email's own \"Dear Welfare Team,\" greeting)", () => {
+  const email = {
+    id: "greeting-false-positive-1",
+    threadId: "greeting-false-positive-1",
+    from: "Someone <someone@example-welfare.test>",
+    subject: "Loan Request",
+    receivedAt: "2026-08-30T09:00:00+05:30",
+    bodyText: "Dear Welfare Team,\r\n\r\nI would like to request LKR 30,000 due to home repairs.\r\n\r\nKind regards,\r\nSomeone\r\n",
+  };
+  const record = parseEmail(email, config);
+  assert.equal(record.loanType, "Personal", "must default, not false-positive match 'Welfare' from the greeting");
+  assert.equal(record.loanTypeSource, "default_no_signal");
+});
+
+test("Loan Type: reason-inference only fires with strong keywords - vague 'urgent' alone never triggers Emergency (real data: 2 real 'ok' records say 'an urgent personal matter')", () => {
+  const email = {
+    id: "urgent-not-emergency-1",
+    threadId: "urgent-not-emergency-1",
+    from: "Someone <someone@example-welfare.test>",
+    subject: "Loan Request", // generic, no keyword
+    receivedAt: "2026-08-30T09:00:00+05:30",
+    bodyText: "Dear Welfare Team,\r\n\r\nI would like to request LKR 30,000 due to an urgent personal matter.\r\n\r\nKind regards,\r\nSomeone\r\n",
+  };
+  const record = parseEmail(email, config);
+  assert.equal(record.loanType, "Personal");
+  assert.equal(record.loanTypeSource, "default_no_signal", "'urgent' must not match any reason-inference keyword");
+});
+
+test("Loan Type: reason-inference resolves a specific type when subject/body give nothing", () => {
+  const email = {
+    id: "reason-inference-1",
+    threadId: "reason-inference-1",
+    from: "Someone <someone@example-welfare.test>",
+    subject: "Loan Request",
+    receivedAt: "2026-08-30T09:00:00+05:30",
+    bodyText: "Dear Welfare Team,\r\n\r\nI would like to request LKR 30,000 due to hospital expenses.\r\n\r\nKind regards,\r\nSomeone\r\n",
+  };
+  const record = parseEmail(email, config);
+  assert.equal(record.loanType, "Medical");
+  assert.equal(record.loanTypeSource, "reason_inference");
+});
+
+test("Loan Type: subject vs body specific-vs-specific disagreement keeps subject's value, flagged via discrepancyNote", () => {
+  const email = {
+    id: "type-conflict-1",
+    threadId: "type-conflict-1",
+    from: "Someone <someone@example-welfare.test>",
+    subject: "Education Loan Request",
+    receivedAt: "2026-08-30T09:00:00+05:30",
+    bodyText: "Dear Welfare Team,\r\n\r\nI would like to request a medical loan of LKR 30,000.\r\n\r\nKind regards,\r\nSomeone\r\n",
+  };
+  const record = parseEmail(email, config);
+  assert.equal(record.loanType, "Education", "subject's explicit statement wins the conflict");
+  assert.match(record.discrepancyNote, /medical.*but the subject explicitly says "Education"/i);
+});
+
+test("Reason: cosmetic formatting only - capitalizes the first letter and adds a trailing period if missing", () => {
+  const email = {
+    id: "reason-format-1",
+    threadId: "reason-format-1",
+    from: "Someone <someone@example-welfare.test>",
+    subject: "Personal Loan Request",
+    receivedAt: "2026-08-30T09:00:00+05:30",
+    bodyText: "Dear Welfare Team,\r\n\r\nI would like to request LKR 30,000 due to home renovation costs\r\n\r\nKind regards,\r\nSomeone\r\n",
+  };
+  const record = parseEmail(email, config);
+  assert.equal(record.reason, "Home renovation costs.");
+});
+
+test("Staff confirmation reply: fills a genuinely missing Amount/Reason, never overrides an already-set value, flags a disagreement instead", () => {
+  const ws = freshWorkspace();
+  const originalEmail = {
+    id: "staff-fill-1",
+    threadId: "staff-fill-1",
+    from: "Someone <someone@example-welfare.test>",
+    subject: "Personal Loan Request",
+    receivedAt: "2026-08-30T09:00:00+05:30",
+    // Amount is genuinely missing (no currency, no anchored bare number);
+    // Reason ("home repairs") IS already extracted - staff's differing
+    // reason below must be flagged, never silently applied.
+    bodyText: "Dear Welfare Team,\r\n\r\nI would like to request a loan due to home repairs.\r\n\r\nKind regards,\r\nSomeone\r\n",
+  };
+  const staffReply = {
+    id: "staff-fill-2",
+    threadId: "staff-fill-1",
+    from: "Digitweb Lanka Welfare Society <welfaredw@gmail.com>",
+    subject: "Re: Personal Loan Request",
+    receivedAt: "2026-08-30T10:00:00+05:30",
+    bodyText:
+      "Dear Someone,\r\n\r\nConfirming your request for LKR 45,000 due to medical bills.\r\n\r\nRegards,\r\nWelfare Team\r\n\r\nOn Sun, Aug 30, 2026 at 9:00 AM Someone <someone@example-welfare.test> wrote:\r\n> Dear Welfare Team,\r\n> I would like to request a loan due to home repairs.\r\n>\r\n> Kind regards,\r\n> Someone\r\n",
+  };
+  const { allRecords } = runPipeline({ emails: [originalEmail, staffReply], ...ws });
+
+  const target = allRecords.find((r) => r.sourceId === "staff-fill-1");
+  assert.ok(target);
+  assert.equal(target.parseStatus, "ok", "the staff-filled amount completes the request");
+  assert.equal(target.amount, "LKR 45,000", "genuinely missing amount filled from the staff reply");
+  assert.equal(target.reason, "Home repairs.", "requester's own reason is kept, never overwritten");
+  assert.match(target.discrepancyNote, /staff reply states a different reason.*medical bills/i);
+  assert.equal(target.staffConfirmedFromMessageId, "staff-fill-2");
+  assert.ok(target.staffConfirmedAt);
+});
+
+test("Staff confirmation reply: a fuller name replaces a shorter one, even on an already-'ok' record", () => {
+  const ws = freshWorkspace();
+  const originalEmail = {
+    id: "staff-name-1",
+    threadId: "staff-name-1",
+    from: "sajeepan digitweblanka <sajeepandigitweblanka@example-welfare.test>",
+    subject: "Personal Loan Request",
+    receivedAt: "2026-08-30T09:00:00+05:30",
+    bodyText:
+      "Dear Welfare Team,\r\n\r\nI would like to request LKR 100,000 due to an urgent personal matter.\r\n\r\nKind regards,\r\nSajeepan\r\n",
+  };
+  const staffReply = {
+    id: "staff-name-2",
+    threadId: "staff-name-1",
+    from: "Digitweb Lanka Welfare Society <welfaredw@gmail.com>",
+    subject: "Re: Personal Loan Request",
+    receivedAt: "2026-08-30T10:00:00+05:30",
+    bodyText:
+      "Dear Sajeepan Kumaran,\r\n\r\nYour request has been received.\r\n\r\nRegards,\r\nWelfare Team\r\n\r\nOn Sun, Aug 30, 2026 at 9:00 AM sajeepan digitweblanka wrote:\r\n> Dear Welfare Team,\r\n> I would like to request LKR 100,000 due to an urgent personal matter.\r\n>\r\n> Kind regards,\r\n> Sajeepan\r\n",
+  };
+  const { allRecords } = runPipeline({ emails: [originalEmail, staffReply], ...ws });
+
+  const target = allRecords.find((r) => r.sourceId === "staff-name-1");
+  assert.ok(target);
+  assert.equal(target.parseStatus, "ok", "sanity check: already ok before the staff reply is considered");
+  assert.equal(target.requestedBy, "Sajeepan Kumaran", "the fuller staff-stated name replaces the shorter original");
+});
+
+test("Staff confirmation reply: a specific staff-stated type upgrades a true no-signal 'Personal' default, but never an explicit 'Personal' statement", () => {
+  const ws = freshWorkspace();
+  const noSignalEmail = {
+    id: "staff-type-upgrade-1",
+    threadId: "staff-type-upgrade-1",
+    from: "Someone <someone@example-welfare.test>",
+    subject: "Loan Request", // no keyword anywhere - true default
+    receivedAt: "2026-08-30T09:00:00+05:30",
+    bodyText: "Dear Welfare Team,\r\n\r\nI would like to request LKR 60,000 for household needs.\r\n\r\nKind regards,\r\nSomeone\r\n",
+  };
+  const explicitPersonalEmail = {
+    id: "staff-type-no-upgrade-1",
+    threadId: "staff-type-no-upgrade-1",
+    from: "Other Person <other@example-welfare.test>",
+    subject: "Personal Loan Request", // explicit - must stay Personal
+    receivedAt: "2026-08-30T09:00:00+05:30",
+    bodyText: "Dear Welfare Team,\r\n\r\nI would like to request LKR 60,000 for household needs.\r\n\r\nKind regards,\r\nOther Person\r\n",
+  };
+  const staffReplyToNoSignal = {
+    id: "staff-type-upgrade-2",
+    threadId: "staff-type-upgrade-1",
+    from: "Digitweb Lanka Welfare Society <welfaredw@gmail.com>",
+    subject: "Re: Loan Request",
+    receivedAt: "2026-08-30T10:00:00+05:30",
+    bodyText: "Confirming your medical loan request.\r\n\r\nRegards,\r\nWelfare Team\r\n",
+  };
+  const staffReplyToExplicit = {
+    id: "staff-type-no-upgrade-2",
+    threadId: "staff-type-no-upgrade-1",
+    from: "Digitweb Lanka Welfare Society <welfaredw@gmail.com>",
+    subject: "Re: Personal Loan Request",
+    receivedAt: "2026-08-30T10:00:00+05:30",
+    bodyText: "Confirming your medical loan request.\r\n\r\nRegards,\r\nWelfare Team\r\n",
+  };
+  const { allRecords } = runPipeline({
+    emails: [noSignalEmail, explicitPersonalEmail, staffReplyToNoSignal, staffReplyToExplicit],
+    ...ws,
+  });
+
+  const upgraded = allRecords.find((r) => r.sourceId === "staff-type-upgrade-1");
+  assert.ok(upgraded);
+  assert.equal(upgraded.loanType, "Medical", "a true no-signal default IS upgraded by staff's specific type");
+  assert.equal(upgraded.loanTypeSource, "staff_reply");
+
+  const notUpgraded = allRecords.find((r) => r.sourceId === "staff-type-no-upgrade-1");
+  assert.ok(notUpgraded);
+  assert.equal(notUpgraded.loanType, "Personal", "an explicit 'Personal' statement is NEVER overridden, even by staff");
+  assert.equal(notUpgraded.loanTypeSource, "subject");
+});
+
 // --- Loan status, 6th column (2026-09-03) ----------------------------------------
 
 test("a staff reply with the recognized 'scheduled for <Month>' pattern sets that status", () => {
@@ -728,14 +969,16 @@ test("a valid request produces exactly one correctly addressed, thread-linked ac
   assert.match(draftText, /Test Requester A/);
   assert.match(draftText, /DRAFT ACKNOWLEDGEMENT - NOT SENT/);
 
-  // The five "ok" fixtures (0001, 0004, 0010, 0011 via the gap-filling merge
-  // with 0012, and 0013) get a draft - 0005/0009/0014 are replies excluded
-  // entirely, and 0012 itself never becomes its own record (it only supplies
-  // a field).
+  // The six "ok" fixtures get a draft: 0001, 0004, 0006 (v9: now resolves
+  // via the Loan Type default-to-Personal fallback, see the dedicated v9
+  // test above), 0010, 0011 (via the gap-filling merge with 0012), and
+  // 0013 - 0005/0009/0014 are replies excluded entirely, and 0012 itself
+  // never becomes its own record (it only supplies a field).
   const draftFiles = fs.readdirSync(ws.ackDir);
   assert.deepEqual(draftFiles.sort(), [
     "fixture-msg-0001.txt",
     "fixture-msg-0004.txt",
+    "fixture-msg-0006.txt",
     "fixture-msg-0010.txt",
     "fixture-msg-0011.txt",
     "fixture-msg-0013.txt",

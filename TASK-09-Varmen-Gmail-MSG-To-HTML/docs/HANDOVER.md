@@ -1,5 +1,82 @@
 # Task 09 — Handover (last updated 2026-09-04, end of session)
 
+## ✅ v9: Loan Type reversal + staff-confirmation-reply gap-filling (built, tested, NOT run against real mail)
+
+While gathering context for the missing-requests investigation below, the
+user requested (via a grill-me session) several deliberate extraction-rule
+changes, now fully built and tested (**72/72 tests passing**,
+`PARSER_VERSION = "v9"`):
+
+1. **Staff confirmation replies are a THIRD gap-filling data source**
+   (`applyStaffConfirmationDetails` in `src/pipeline.js`, candidates
+   extracted via `extractStaffConfirmationDetails` in `src/parser.js`),
+   alongside the existing same-sender gap-fill and manual corrections file:
+   - Amount/Reason: fills a genuine gap only - a DIFFERENT staff-stated
+     value is never silently applied, only flagged via a new
+     `discrepancyNote` field.
+   - Requested By: a fuller staff-stated name joins the existing "most name
+     parts wins" comparison and CAN replace an already-set shorter name,
+     even on an already-`ok` record - this is the actual fix for the
+     earlier-noted "4 accounts with no full name available" limitation
+     (see "Open items" #1 further below - that finding still stands as
+     correct for what Gmail data alone contains, but staff replies can add
+     information Gmail data alone didn't have).
+   - Loan Type: a specific staff-stated type upgrades a true no-signal
+     default only - never an explicit statement (see below).
+   - **Best-effort heuristic, explicitly flagged as such**: staff-reply
+     name extraction (`config.staffNameGreetingPattern`/
+     `staffNameExcludedWords`) has no real calibration data behind it,
+     unlike every other pattern in this codebase - worth re-checking once
+     real staff-reply output has actually been reviewed.
+2. **Loan Type formally reverses the "never guess, leave blank" rule** for
+   this one field (`resolveOwnLoanType` in `src/parser.js`): checks subject
+   → body → reason-inference → defaults to "Personal" as a last resort.
+   Loan Type can no longer cause `needs_review`. A new `loanTypeSource`
+   field records HOW the value was determined (`subject`/`body`/
+   `reason_inference`/`staff_reply`/`default_no_signal`) so a real
+   requester statement is never confused with a guess.
+   - **Two real bugs caught and fixed DURING testing, not before** (both
+     now have dedicated regression tests):
+     a. A body-text keyword scan false-positive-matched "welfare" inside
+        every email's own **"Dear Welfare Team,"** greeting. Fixed:
+        body-level matching now requires an explicit "`<type> loan`" phrase
+        (`loanTypeBodyPhrases`), not a bare word.
+     b. The first version treated "Personal" as a weak/generic default
+        **even when explicitly, deliberately stated** (subject "Personal
+        Loan Request" AND body "a personal loan of..." - fixture-msg-0001's
+        real shape), which let a merely-circumstantial reason ("...due to
+        urgent medical expenses") silently override two explicit
+        statements to "Medical". **Fixed, per explicit user confirmation**:
+        an explicit statement (subject OR body) is now ALWAYS final,
+        including an explicit "Personal" - reason-inference/default only
+        apply when NEITHER gives any signal at all.
+   - `loanTypeReasonKeywords` is deliberately conservative - no vague words
+     like "urgent" - two real "ok" records say "an urgent personal matter"
+     and must keep resolving to Personal (via the no-signal default), not
+     get reclassified to Emergency. Dedicated regression test covers this.
+3. **Amount**: a bare number with no currency prefix (e.g. "100000") is now
+   normalized to "LKR 100,000" (comma-formatted).
+4. **Reason**: cosmetic-only formatting - capitalized first letter, a
+   trailing period added if missing. Extraction boundaries unchanged.
+
+**New DB columns needed, NOT YET migrated**: `sql/002_add_v9_columns.sql`
+(drafted, reviewed for review but not run) adds `loan_type_source`,
+`discrepancy_note`, `staff_confirmed_from_message_id`,
+`staff_confirmed_at` to `welfare.loan_requests`. `src/pg-store.js` already
+maps these 4 new fields - **if the DB mirror runs again before this
+migration is applied, those 4 columns simply won't exist yet and the
+INSERT will fail** (the mirror's failure is caught/logged, never breaks
+the JSON-store-driven pipeline - but the mirror itself would fail
+entirely until this migration runs). **Do not run
+`node --env-file=.env src/run-live.js` again until either this migration
+runs, or `VARMEN_DB_MIRROR` is temporarily turned back off** - flag this
+to the user before the next live run.
+
+**Not yet applied to real data at all** - none of this has been exercised
+against the real mailbox yet. The next real historical pull (see the
+missing-requests section right below) will use this v9 logic automatically
+once it runs.
+
 ## 🔴 HIGHEST PRIORITY: Stage 2 was missing real loan requests — ROOT CAUSE FOUND, FIX BUILT, NOT YET RUN
 
 **User reported (2026-09-04): multiple loan requests from various
@@ -284,7 +361,8 @@ explicitly picks a direction — do not default to one.**
 
 ## TL;DR status
 
-**57/57 tests passing. `PARSER_VERSION = "v8"`.** Stage 1 (Gmail read-only) and
+**72/72 tests passing. `PARSER_VERSION = "v9"`** (see the v9 banner at the
+top of this file for what changed most recently). Stage 1 (Gmail read-only) and
 Stage 2 (full Gmail integration) of the 5-stage plan are built. On 2026-09-03
 they were run successfully against the real inbox twice in draft-only backfill
 mode (zero acknowledgements created, as required). On 2026-09-04 a genuine
@@ -579,7 +657,7 @@ new information):**
 ## Quick reference — commands
 
 ```bash
-npm test                                    # 57 tests, should all pass
+npm test                                    # 72 tests, should all pass
 npm run build                               # demo pipeline (safe, no network)
 node --env-file=.env src/run-live.js        # REAL live pull - ask first
 node --env-file=.env src/gmail-auth.js      # re-auth if the refresh token ever fails
@@ -608,6 +686,8 @@ node --env-file=.env push_to_hub.js "<full-path-to-html-file>" "<page-slug>" "<p
 | `src/db-check.js` | Added 2026-09-04 - read-only identity + schema/table existence check only, deliberately separate from `db-migrate.js` (no DDL). Already run successfully (with SSL) - see "Stage 3" banner above for the result |
 | `src/db.js` | Connection pool + `verifyIdentity()`/`withVerifiedClient()` - now actively used (migration ran, `pg-store.js` uses it too) |
 | `src/db-migrate.js` | The migration already ran successfully - re-running it will abort on purpose (table-already-exists guard) |
-| `src/pg-store.js` | Added 2026-09-04 - `PgStore` class, mirrors records into `welfare.loan_requests` in parallel with the JSON store. `VARMEN_DB_MIRROR=true` set 2026-09-04 - actively mirroring on every live run - see "Stage 3" section above |
+| `src/pg-store.js` | Added 2026-09-04 - `PgStore` class, mirrors records into `welfare.loan_requests` in parallel with the JSON store. `VARMEN_DB_MIRROR=true` set 2026-09-04 - actively mirroring on every live run - see "Stage 3" section above. Now maps 4 more v9 fields - **will fail until `sql/002_add_v9_columns.sql` runs**, see the v9 banner at the top |
+| `sql/002_add_v9_columns.sql` | Drafted 2026-09-04, NOT run - adds `loan_type_source`/`discrepancy_note`/`staff_confirmed_from_message_id`/`staff_confirmed_at` to `welfare.loan_requests` |
+| `test/gmail-fetch.test.js` | Unit tests for `buildSearchQuery`'s date-window/`"all"` logic (no live Gmail call) |
 | `test/pg-store.test.js` | Unit tests for `pg-store.js`'s pure mapping/SQL-building functions (no live DB needed) |
 | `hub-push/` | Separate, already-working publisher: pushes a finished output HTML file to the Varmen AIOS hub (own `package.json`/`node_modules`/`.env`) - see "What actually works right now" above |

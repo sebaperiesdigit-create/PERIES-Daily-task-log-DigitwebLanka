@@ -2,7 +2,13 @@ import fs from "node:fs";
 import path from "node:path";
 
 import { config, subjectHasQualifyingKeywords, PARSER_VERSION } from "./config.js";
-import { parseEmail, extractFields, extractStatusFromStaffReply } from "./parser.js";
+import {
+  parseEmail,
+  extractFields,
+  extractStatusFromStaffReply,
+  extractStaffConfirmationDetails,
+  namePartCount,
+} from "./parser.js";
 import { isReplyMessage } from "./gmail-reply-marker.js";
 import { Store } from "./store.js";
 import { renderHtml } from "./html.js";
@@ -190,6 +196,112 @@ function detectLoanStatus({ emails, record, previouslyStored, config }) {
   return "Submitted";
 }
 
+/** Appends a note to a record's discrepancyNote, joined by "; " - never overwrites an earlier note. */
+function appendDiscrepancyNote(record, note) {
+  return record.discrepancyNote ? `${record.discrepancyNote}; ${note}` : note;
+}
+
+/**
+ * Staff confirmation reply data source (v9, CONFIRMED 2026-09-04, grill-me
+ * session) - the THIRD and final gap-filling layer, after the same-sender
+ * gap-fill merge and manual corrections above. Reads every reply in the
+ * thread from `config.statusStaffAddress` (the same address already
+ * trusted for Loan Status - see `detectLoanStatus` above) via
+ * `extractStaffConfirmationDetails` (src/parser.js), then applies THREE
+ * different, deliberately distinct precedence rules per field:
+ *
+ *   - Amount / Reason: fills ONLY a currently-null field - never overwrites
+ *     a value the requester already stated. A DIFFERENT staff-stated value
+ *     is never silently applied; it's recorded via `discrepancyNote`
+ *     instead, so a human notices rather than the disagreement vanishing.
+ *   - Requested By: a staff-stated name joins the existing "most name
+ *     parts wins" comparison (see `extractRequestedBy` in src/parser.js) -
+ *     CAN replace an already-set shorter name, even on an already-"ok"
+ *     record. Deliberately different from Amount/Reason: a name isn't a
+ *     negotiable business fact that could differ between the requester and
+ *     staff, just a fact that can be more or less complete.
+ *   - Loan Type: a specific staff-stated type can upgrade a generic
+ *     "Personal" value (however that Personal was itself derived) to
+ *     something more specific, but never overrides an already-specific
+ *     value.
+ *
+ * Runs on EVERY record (not just needs_review), since the Requested-By and
+ * Loan-Type upgrades both apply regardless of parseStatus. Recomputes
+ * parseStatus/reviewNotes afterward, same as the other two gap-filling
+ * layers, since a genuinely-missing Amount/Reason may now be filled.
+ */
+function applyStaffConfirmationDetails({ emails, records, config }) {
+  const staffRepliesByThreadId = new Map();
+  for (const email of emails) {
+    if (!fromHeaderMatchesAddress(email.from, config.statusStaffAddress)) continue;
+    const list = staffRepliesByThreadId.get(email.threadId) ?? [];
+    list.push(email);
+    staffRepliesByThreadId.set(email.threadId, list);
+  }
+
+  return records.map((record) => {
+    const staffReplies = staffRepliesByThreadId.get(record.threadId);
+    if (!staffReplies || staffReplies.length === 0) return record;
+
+    // Two separate flags on purpose: `fieldsChanged` means an actual field
+    // value was set (needs a parseStatus/reviewNotes recompute below);
+    // `notesChanged` means only a discrepancyNote was added (a value stayed
+    // untouched, so parseStatus/reviewNotes must NOT be touched) - a
+    // discrepancy-only touch must still be persisted (not discarded), just
+    // without re-deriving parseStatus from it.
+    let fieldsChanged = false;
+    let notesChanged = false;
+    let updated = { ...record };
+
+    for (const staffEmail of staffReplies) {
+      const staff = extractStaffConfirmationDetails(staffEmail, config);
+      let touchedByThisReply = false;
+
+      // Requested By: fullest name wins, regardless of parseStatus (boundary 2).
+      if (staff.requestedBy && namePartCount(staff.requestedBy) > namePartCount(updated.requestedBy)) {
+        updated = { ...updated, requestedBy: staff.requestedBy };
+        touchedByThisReply = true;
+      }
+
+      // Amount/Reason: fill genuine gaps only (boundary 1); flag, never apply, a disagreement.
+      for (const field of ["amount", "reason"]) {
+        if (staff[field] == null) continue;
+        if (updated[field] === null) {
+          updated = { ...updated, [field]: staff[field] };
+          touchedByThisReply = true;
+        } else if (updated[field] !== staff[field]) {
+          const note = `Staff reply states a different ${field} ("${staff[field]}") than the requester's own email - kept the requester's original value.`;
+          updated = { ...updated, discrepancyNote: appendDiscrepancyNote(updated, note) };
+          notesChanged = true;
+        }
+      }
+
+      // Loan Type: staff's specific type upgrades a true no-signal "Personal"
+      // default ONLY - never an explicit "Personal" the requester themselves
+      // stated (subject or body) - matches resolveOwnLoanType's rule in
+      // src/parser.js that an explicit statement is always final (boundary 3).
+      if (staff.loanType && staff.loanType !== "Personal" && updated.loanTypeSource === "default_no_signal") {
+        updated = { ...updated, loanType: staff.loanType, loanTypeSource: "staff_reply" };
+        touchedByThisReply = true;
+      }
+
+      if (touchedByThisReply) {
+        updated = { ...updated, staffConfirmedFromMessageId: staffEmail.id, staffConfirmedAt: new Date().toISOString() };
+        fieldsChanged = true;
+      }
+    }
+
+    if (!fieldsChanged && !notesChanged) return record;
+    if (!fieldsChanged) return updated; // notes-only touch - parseStatus/reviewNotes untouched
+
+    const stillMissing = BUSINESS_FIELDS.filter((field) => updated[field] === null);
+    updated.parseStatus = stillMissing.length === 0 ? "ok" : "needs_review";
+    updated.reviewNotes = stillMissing.length > 0 ? `Missing/ambiguous field(s): ${stillMissing.join(", ")}` : null;
+
+    return updated;
+  });
+}
+
 /**
  * Runs the full local pipeline: emails -> parse -> ack draft (if newly due) ->
  * store (idempotent upsert) -> standalone HTML. Never sends anything.
@@ -294,9 +406,14 @@ export function runPipeline({
   }
   const correctedRecords = applyManualCorrections({ parsed, corrections });
 
+  // v9: staff confirmation replies - the third gap-filling layer, applied
+  // to EVERY record (not just needs_review), since Requested-By/Loan-Type
+  // upgrades apply regardless of parseStatus. See applyStaffConfirmationDetails.
+  const withStaffDetails = applyStaffConfirmationDetails({ emails, records: correctedRecords, config });
+
   // v7: attach the "Status" 6th column - only meaningful for "ok" records,
   // since needs_review ones aren't in the main table at all.
-  const withStatus = correctedRecords.map((record) => {
+  const withStatus = withStaffDetails.map((record) => {
     if (record.parseStatus !== "ok") return record;
     return { ...record, status: detectLoanStatus({ emails, record, previouslyStored, config }) };
   });
