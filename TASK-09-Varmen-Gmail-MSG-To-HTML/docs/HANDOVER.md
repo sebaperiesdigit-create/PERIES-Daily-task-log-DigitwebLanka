@@ -25,7 +25,7 @@ fixing** — it's explicitly deprioritized, not closed. Do not close or
 remove this section on your own judgment; only the user reopening/resolving
 it should change this.
 
-## ▶️ Stage 3 (Varmen DB) — RESUMED 2026-09-04, active, currently BLOCKED
+## ▶️ Stage 3 (Varmen DB) — RESUMED 2026-09-04, active, schema question RESOLVED
 
 Per explicit user instruction, Stage 3 work resumed (see sequencing decision
 above) and made real progress this session:
@@ -53,17 +53,22 @@ above) and made real progress this session:
      what the earlier "verify before trusting" decision was meant to catch.
    - `welfare.loan_requests` also doesn't exist (expected, given the above).
 
-**BLOCKED here, 2026-09-04: user said "I will confirm [this] without any
-further approval, no further execution."** Meaning: the user is verifying
-independently whether this is genuinely the right `varmen_db` (a wrong/
-different DB would also explain a missing `welfare` schema) or whether
-`CREATE SCHEMA welfare` genuinely needs to be added to the migration. **Do
-not add `CREATE SCHEMA`, do not run `db-migrate.js`, do not attempt any
-further DB connection or query on your own initiative** — wait for the user
-to report back what they found. The two options that were on the table when
-this paused: (a) add `CREATE SCHEMA IF NOT EXISTS welfare` to the DDL and
-proceed, once confirmed this is the right DB, or (b) the connection details
-in `.env` point somewhere unintended and need correcting first.
+**RESOLVED 2026-09-04:** the user independently verified this themselves —
+installed pgAdmin, connected to the same `varmen_db`/`varmen_user` with SSL
+mode Require, and confirmed directly in the schema browser: **this is
+genuinely the correct database, and `welfare` schema genuinely does not
+exist.** Not a wrong-database issue. So option (a) from the two choices
+below applies: `CREATE SCHEMA IF NOT EXISTS welfare` needs to be added to
+the migration DDL.
+
+**Still BLOCKED on execution** — confirming the schema is missing is not
+the same as approval to add `CREATE SCHEMA` and run the migration. **Do not
+add `CREATE SCHEMA` to the SQL, do not run `db-migrate.js`, do not attempt
+any further DB write on your own initiative** — the next step (updating
+`sql/001_create_welfare_loan_requests.sql` to add `CREATE SCHEMA IF NOT
+EXISTS welfare` ahead of the `CREATE TABLE`, then showing it for review
+before running) still needs separate explicit go-ahead, per this task's
+standing pattern.
 
 See the "Stage 3" section further below for the full file inventory and the
 decisions locked in during the earlier grill-me session (execution owner,
@@ -378,10 +383,11 @@ new information):**
   mechanism is a deliberate, separate, human-only path — do not blur the two.
 - Do **not** add `gmail.send`, add scheduling/cron, or change Google Cloud
   settings — none of this exists in the codebase, intentionally.
-- Do **not** run `npm run db:migrate`, add `CREATE SCHEMA`, or make any
-  further Varmen DB connection/query on your own initiative — Stage 3 is
-  currently **BLOCKED** on the user independently confirming whether this
-  is genuinely the right database (see "Stage 3" banner above). `npm
+- Do **not** run `npm run db:migrate`, add `CREATE SCHEMA` to the SQL file,
+  or make any further Varmen DB write on your own initiative — confirmed
+  2026-09-04 (independently, via pgAdmin) that `welfare` schema genuinely
+  doesn't exist in the correct DB, but that's not approval to add
+  `CREATE SCHEMA` and run the migration (see "Stage 3" banner above). `npm
   install` and read-only connections (`src/db-check.js`) already happened
   this session, each with separate explicit approval — that precedent does
   NOT extend to the next step; wait for the user to report back.
