@@ -1,5 +1,29 @@
 # Task 09 — Handover (last updated 2026-09-04, end of session)
 
+## 🔴 NEW, HIGHEST PRIORITY: Stage 2 is MISSING multiple real loan requests
+
+**User reported (2026-09-04), after checking the live output themselves:
+multiple loan requests from various requesters are missing from
+`output/live/loan-requests.html`** — not showing as `ok`, not showing as
+`needs_review` either, just absent entirely. This is a bigger problem than
+anything else recorded below: it means the pipeline is silently dropping
+real requests, undercounting what the count in this file has been
+reporting all session (previously reported as "18 subject-matching
+messages, 5 records"). **Investigation was starting (see the conversation
+that follows this point) — grilling the user for specifics (which
+requesters, roughly how old, do their subjects contain both "loan" and
+"request", could any be replies reusing an old thread's subject) before
+touching any code, per explicit user instruction: "grill me for more
+clarification and for more context" before returning to Stage 2 work.**
+
+**Do not modify src/config.js, src/gmail-fetch.js, or the qualifying rule
+without that context gathered first** — the known candidate causes (subject
+keyword mismatch, the 30-day GMAIL_FETCH_SINCE_DAYS fetch window, the
+reply-exclusion heuristic wrongly catching a genuinely new request, the
+50-message fetch cap) each call for a different fix, and guessing wrong
+risks widening `isQualifying` in a way that reintroduces the v3 bug
+(ordinary replies flooding `needs_review` again).
+
 ## 🔴 CONFIRMED: real loan-requester data is PUBLICLY EXPOSED, no login required
 
 **User verified directly in an incognito browser (2026-09-04): the hub page
