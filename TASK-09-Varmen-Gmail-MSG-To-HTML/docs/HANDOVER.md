@@ -25,15 +25,50 @@ fixing** — it's explicitly deprioritized, not closed. Do not close or
 remove this section on your own judgment; only the user reopening/resolving
 it should change this.
 
-## ▶️ Stage 3 (Varmen DB) — RESUMED 2026-09-04, active
+## ▶️ Stage 3 (Varmen DB) — RESUMED 2026-09-04, active, currently BLOCKED
 
-Per explicit user instruction, Stage 3 work is back in progress (see
-sequencing decision above). See the "Stage 3" section further below for
-everything drafted so far (SQL, `src/db.js`, `src/db-migrate.js` — still not
-run) and the ordered next-steps list. Continue from wherever that list left
-off; do not re-litigate the decisions already locked in during the earlier
-grill-me session (execution owner, schema-exists check timing, parallel
-JSON+DB store strategy, `updated_at` handling) without new information.
+Per explicit user instruction, Stage 3 work resumed (see sequencing decision
+above) and made real progress this session:
+
+1. ✅ `VARMEN_EXPECTED_DB=varmen_db` / `VARMEN_EXPECTED_USER=varmen_user`
+   added to real `.env` (blind-appended via shell redirect, values never
+   read into this session — only checked that the key *names* weren't
+   already present first).
+2. ✅ `npm install` run — `pg` is now in `node_modules`.
+3. 🔴 **First real connection attempt FAILED**: `no pg_hba.conf entry for
+   host ..., user "varmen_user", database "varmen_db", no encryption` — the
+   server rejects unencrypted connections. **Fixed** by adding
+   `ssl: { rejectUnauthorized: false }` to the `Pool` config in `src/db.js`
+   (accepts the server's cert without verifying its chain; connection is
+   still encrypted — this only skips chain verification, common for a
+   managed/self-signed Postgres host).
+4. Re-ran the read-only identity+schema check (new file `src/db-check.js` —
+   identity check + schema/table existence only, deliberately separate from
+   `src/db-migrate.js` so this could run without risking the actual
+   migration). **Results:**
+   - ✅ Identity check passed (confirmed talking to the right db/user).
+   - 🔴 **`welfare` schema does NOT exist in this database.** Contradicts
+     the 2026-09-03 plan's assumption (schema assumed to already exist, so
+     the approved DDL deliberately has no `CREATE SCHEMA`). This is exactly
+     what the earlier "verify before trusting" decision was meant to catch.
+   - `welfare.loan_requests` also doesn't exist (expected, given the above).
+
+**BLOCKED here, 2026-09-04: user said "I will confirm [this] without any
+further approval, no further execution."** Meaning: the user is verifying
+independently whether this is genuinely the right `varmen_db` (a wrong/
+different DB would also explain a missing `welfare` schema) or whether
+`CREATE SCHEMA welfare` genuinely needs to be added to the migration. **Do
+not add `CREATE SCHEMA`, do not run `db-migrate.js`, do not attempt any
+further DB connection or query on your own initiative** — wait for the user
+to report back what they found. The two options that were on the table when
+this paused: (a) add `CREATE SCHEMA IF NOT EXISTS welfare` to the DDL and
+proceed, once confirmed this is the right DB, or (b) the connection details
+in `.env` point somewhere unintended and need correcting first.
+
+See the "Stage 3" section further below for the full file inventory and the
+decisions locked in during the earlier grill-me session (execution owner,
+schema-exists check timing, parallel JSON+DB store strategy, `updated_at`
+handling) — still valid, do not re-litigate without new information.
 
 **Read this file first when resuming this task.** It's the single source of
 truth for "where did we leave off" — more current than `docs/README.md`
@@ -343,10 +378,13 @@ new information):**
   mechanism is a deliberate, separate, human-only path — do not blur the two.
 - Do **not** add `gmail.send`, add scheduling/cron, or change Google Cloud
   settings — none of this exists in the codebase, intentionally.
-- Do **not** run `npm install`, `npm run db:migrate`, or otherwise connect to
-  Varmen DB — `src/db.js`/`src/db-migrate.js` are drafted (2026-09-04) but
-  must stay unexecuted until each step in "Stage 3" above's next-steps list
-  is separately approved.
+- Do **not** run `npm run db:migrate`, add `CREATE SCHEMA`, or make any
+  further Varmen DB connection/query on your own initiative — Stage 3 is
+  currently **BLOCKED** on the user independently confirming whether this
+  is genuinely the right database (see "Stage 3" banner above). `npm
+  install` and read-only connections (`src/db-check.js`) already happened
+  this session, each with separate explicit approval — that precedent does
+  NOT extend to the next step; wait for the user to report back.
 - Do **not** delete `.env` or print its contents. DB credentials are already
   in there (`VARMEN_DB_*`), unused by any code.
 
@@ -412,7 +450,8 @@ node --env-file=.env push_to_hub.js "<full-path-to-html-file>" "<page-slug>" "<p
 | `test/gmail-live.test.js` | Gmail-message-mapping + live/demo output isolation tests |
 | `fixtures/emails/001-014*.json` | Synthetic test fixtures - each one documents (in its filename/companion test) exactly which real-world bug or rule it proves |
 | `docs/README.md` | Architecture/mapping reference (may lag slightly behind this file - trust this file for "current state") |
-| `.env` / `.env.example` | Real secrets (gitignored) / template (committed) - Gmail OAuth + Varmen DB creds, DB creds unused so far |
-| `sql/001_create_welfare_loan_requests.sql` | Drafted 2026-09-04, NOT run - see "Stage 3" section above |
+| `.env` / `.env.example` | Real secrets (gitignored) / template (committed) - Gmail OAuth + Varmen DB creds. `VARMEN_EXPECTED_DB`/`VARMEN_EXPECTED_USER` added 2026-09-04, identity check now passes against the real DB |
+| `sql/001_create_welfare_loan_requests.sql` | Drafted 2026-09-04, NOT run - `welfare` schema doesn't exist yet, see "Stage 3" banner above |
+| `src/db-check.js` | Added 2026-09-04 - read-only identity + schema/table existence check only, deliberately separate from `db-migrate.js` (no DDL). Already run successfully (with SSL) - see "Stage 3" banner above for the result |
 | `src/db.js` / `src/db-migrate.js` | Drafted 2026-09-04, NOT imported by the live pipeline, NOT run - see "Stage 3" section above |
 | `hub-push/` | Separate, already-working publisher: pushes a finished output HTML file to the Varmen AIOS hub (own `package.json`/`node_modules`/`.env`) - see "What actually works right now" above |

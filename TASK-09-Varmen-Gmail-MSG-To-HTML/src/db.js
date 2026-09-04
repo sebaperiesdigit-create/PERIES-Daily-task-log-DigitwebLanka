@@ -39,6 +39,12 @@ function getPool() {
     database: process.env.VARMEN_DB_NAME,
     user: process.env.VARMEN_DB_USER,
     password: process.env.VARMEN_DB_PASSWORD,
+    // 2026-09-04: the server rejected an unencrypted connection
+    // ("no pg_hba.conf entry ... no encryption"). rejectUnauthorized: false
+    // accepts the server's certificate without verifying its chain — common
+    // for a managed/self-signed Postgres host. Connection is still
+    // encrypted in transit; this only skips certificate verification.
+    ssl: { rejectUnauthorized: false },
   });
   return pool;
 }
