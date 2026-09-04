@@ -1,28 +1,52 @@
 # Task 09 — Handover (last updated 2026-09-04, end of session)
 
-## 🔴 NEW, HIGHEST PRIORITY: Stage 2 is MISSING multiple real loan requests
+## 🔴 HIGHEST PRIORITY: Stage 2 was missing real loan requests — ROOT CAUSE FOUND, FIX BUILT, NOT YET RUN
 
-**User reported (2026-09-04), after checking the live output themselves:
-multiple loan requests from various requesters are missing from
-`output/live/loan-requests.html`** — not showing as `ok`, not showing as
-`needs_review` either, just absent entirely. This is a bigger problem than
-anything else recorded below: it means the pipeline is silently dropping
-real requests, undercounting what the count in this file has been
-reporting all session (previously reported as "18 subject-matching
-messages, 5 records"). **Investigation was starting (see the conversation
-that follows this point) — grilling the user for specifics (which
-requesters, roughly how old, do their subjects contain both "loan" and
-"request", could any be replies reusing an old thread's subject) before
-touching any code, per explicit user instruction: "grill me for more
-clarification and for more context" before returning to Stage 2 work.**
+**User reported (2026-09-04): multiple loan requests from various
+requesters were missing from `output/live/loan-requests.html`** — not
+`ok`, not `needs_review`, absent entirely. Grilled for specifics per
+explicit instruction before touching code:
+- **Age confirmed: months older than 30 days.** This alone fully explains
+  it — **root cause: `GMAIL_FETCH_SINCE_DAYS` defaults to 30 days, and no
+  run (including the very first backfill) has ever looked further back
+  than that.** Not a parsing/qualifying-rule bug — those months-old
+  requests were simply never fetched from Gmail at all.
+- User confirmed: check the FULL mailbox history, no date limit.
 
-**Do not modify src/config.js, src/gmail-fetch.js, or the qualifying rule
-without that context gathered first** — the known candidate causes (subject
-keyword mismatch, the 30-day GMAIL_FETCH_SINCE_DAYS fetch window, the
-reply-exclusion heuristic wrongly catching a genuinely new request, the
-50-message fetch cap) each call for a different fix, and guessing wrong
-risks widening `isQualifying` in a way that reintroduces the v3 bug
-(ordinary replies flooding `needs_review` again).
+**A second, related gap found and fixed while addressing this:**
+`fetchQualifyingEmails` silently capped at the first 50 Gmail search
+results with no pagination — if the full-history pull (now being enabled)
+turns up more than 50 qualifying messages total, it would have silently
+dropped the rest too, with no warning. Fixed alongside the date-window fix.
+
+**Fixes built 2026-09-04, NOT YET RUN against the real mailbox:**
+1. `src/gmail-fetch.js` `buildSearchQuery` (now exported + unit tested):
+   `GMAIL_FETCH_SINCE_DAYS=all` (literal string) skips the `after:` date
+   clause entirely — full history, no bound.
+2. `fetchQualifyingEmails` now pages through `nextPageToken` until
+   exhausted (or a 2000-message safety ceiling, which logs a warning if
+   actually hit) instead of silently stopping at 50.
+3. `src/run-live.js`: new `FORCE_BACKFILL=true` env override — makes a run
+   ALWAYS backfill-mode (no acknowledgement drafts, even for
+   otherwise-complete requests) regardless of whether `data/live/store.json`
+   already exists. **Necessary because the automatic backfill detection
+   only checks "does the store file exist" — it already does, from earlier
+   normal runs, so without this override a wide historical pull would
+   wrongly draft acknowledgements for old, likely-already-resolved
+   requests just because they're newly appearing in an existing store.**
+4. 4 new unit tests for `buildSearchQuery` (61/61 total passing). The
+   pagination fix itself calls the real Gmail API and is unverified except
+   manually, same as `db.js`/`gmail-fetch.js`'s other real-API functions.
+
+**Not yet run.** The actual historical catch-up requires setting BOTH
+`GMAIL_FETCH_SINCE_DAYS=all` AND `FORCE_BACKFILL=true` in real `.env`,
+then running `run-live.js` for real — a wider, longer Gmail read than any
+previous run, and (since `VARMEN_DB_MIRROR=true` is also on) would mirror
+all newly-discovered historical records into `welfare.loan_requests` too.
+**Needs its own explicit go-ahead before running**, same as every other
+live/DB action this session. After that one-time run, remember to set
+`GMAIL_FETCH_SINCE_DAYS` back to a normal rolling window (e.g. 30) and
+`FORCE_BACKFILL` back off for ongoing day-to-day runs.
 
 ## 🔴 CONFIRMED: real loan-requester data is PUBLICLY EXPOSED, no login required
 

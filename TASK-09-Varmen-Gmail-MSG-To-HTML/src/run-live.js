@@ -22,6 +22,14 @@ import { PgStore } from "./pg-store.js";
 // `run-live.js` invocation still touches ONLY the JSON store and Gmail,
 // exactly as before, until that flag is turned on with its own separate
 // go-ahead.
+//
+// Historical catch-up (added 2026-09-04): FORCE_BACKFILL=true in .env
+// overrides the automatic backfill detection below to ALWAYS treat this
+// run as historical, regardless of whether the JSON store already exists -
+// for a one-time wide pull (GMAIL_FETCH_SINCE_DAYS=all) that must never
+// draft acknowledgements for old, likely-already-resolved requests just
+// because they're newly appearing in an existing store. Unset/false by
+// default - normal runs still use the automatic (store-existence) check.
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.join(__dirname, "..");
@@ -38,15 +46,24 @@ async function main() {
   // sitting in the mailbox (up to the fetch window), which is a historical
   // import, not "new" activity. Historical imports must never draft
   // acknowledgements - see src/pipeline.js `backfillMode`. This is automatic,
-  // not a flag someone has to remember to pass.
-  const backfillMode = !fs.existsSync(liveStorePath);
+  // not a flag someone has to remember to pass - EXCEPT FORCE_BACKFILL=true
+  // (see file header), for a one-time wide catch-up against an existing store.
+  const forceBackfill = process.env.FORCE_BACKFILL === "true";
+  const backfillMode = forceBackfill || !fs.existsSync(liveStorePath);
   console.log(
-    backfillMode
-      ? "No existing live store found - treating this as a HISTORICAL BACKFILL run. No acknowledgement drafts will be created, even for otherwise-complete requests."
-      : "Existing live store found - treating this as a normal run. New complete requests may get an acknowledgement draft."
+    forceBackfill
+      ? "FORCE_BACKFILL=true - treating this as a HISTORICAL BACKFILL run regardless of the existing store. No acknowledgement drafts will be created, even for otherwise-complete requests."
+      : backfillMode
+        ? "No existing live store found - treating this as a HISTORICAL BACKFILL run. No acknowledgement drafts will be created, even for otherwise-complete requests."
+        : "Existing live store found - treating this as a normal run. New complete requests may get an acknowledgement draft."
   );
 
-  console.log("Searching the live mailbox for subject-matching messages (read-only)...");
+  const sinceDaysSetting = process.env.GMAIL_FETCH_SINCE_DAYS;
+  console.log(
+    sinceDaysSetting === "all"
+      ? "GMAIL_FETCH_SINCE_DAYS=all - searching the FULL mailbox history (no date bound) for subject-matching messages (read-only)..."
+      : "Searching the live mailbox for subject-matching messages (read-only)..."
+  );
   const emails = await fetchQualifyingEmails();
   console.log(
     `Fetched ${emails.length} subject-matching message(s) (includes replies, which the pipeline still ` +
