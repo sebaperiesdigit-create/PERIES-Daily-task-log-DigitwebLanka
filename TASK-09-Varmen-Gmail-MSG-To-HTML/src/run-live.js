@@ -3,17 +3,25 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { fetchQualifyingEmails } from "./gmail-fetch.js";
 import { runPipeline } from "./pipeline.js";
+import { PgStore } from "./pg-store.js";
 
 // Stage 2 of the live rollout plan: a DELIBERATE, MANUAL command only.
 // Not scheduled, not run automatically by anything. Run yourself with
 // `npm run gmail:live` (or `node --env-file=.env src/run-live.js`) whenever
 // you explicitly want to pull current real mail.
 //
-// Read-only Gmail access only. No DB writes, no deployment, no email sent -
-// acknowledgement "sending" does not exist anywhere in this codebase yet
-// (Stage 5, separately approved, later). All output goes to gitignored
-// output/live/ + data/live/ paths - the committed demo files built from
-// fixtures/emails/*.json are never touched by this script.
+// Read-only Gmail access only. No email sent - acknowledgement "sending"
+// does not exist anywhere in this codebase yet (Stage 5, separately
+// approved, later). All output goes to gitignored output/live/ + data/live/
+// paths - the committed demo files built from fixtures/emails/*.json are
+// never touched by this script.
+//
+// Varmen DB mirror (Stage 3, added 2026-09-04): OFF BY DEFAULT. Only
+// mirrors records into welfare.loan_requests, in parallel with the JSON
+// store, when VARMEN_DB_MIRROR=true is explicitly set in .env - a plain
+// `run-live.js` invocation still touches ONLY the JSON store and Gmail,
+// exactly as before, until that flag is turned on with its own separate
+// go-ahead.
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.join(__dirname, "..");
@@ -45,13 +53,21 @@ async function main() {
       `excludes below - only fresh initial requests actually qualify). Nothing printed beyond counts from here.`
   );
 
-  const { allRecords } = runPipeline({
+  const dbMirrorEnabled = process.env.VARMEN_DB_MIRROR === "true";
+  console.log(
+    dbMirrorEnabled
+      ? "VARMEN_DB_MIRROR=true - records will ALSO be mirrored into welfare.loan_requests (parallel, best-effort)."
+      : "Varmen DB mirror is OFF (VARMEN_DB_MIRROR not set to \"true\") - JSON store only, as before."
+  );
+
+  const { allRecords, dbMirrorPromise } = runPipeline({
     emails,
     storePath: liveStorePath,
     outputHtmlPath: liveHtmlPath,
     ackDir: liveAckDir,
     backfillMode,
     correctionsPath: liveCorrectionsPath,
+    pgStore: dbMirrorEnabled ? new PgStore() : undefined,
   });
 
   const ok = allRecords.filter((r) => r.parseStatus === "ok").length;
@@ -61,6 +77,11 @@ async function main() {
   console.log(`Store now has ${allRecords.length} record(s): ${ok} ok, ${review} needs_review.`);
   console.log(`Acknowledgement drafts prepared (cumulative, draft-only, NOT sent): ${acked}.`);
   console.log("HTML written to output/live/loan-requests.html");
+
+  if (dbMirrorPromise) {
+    await dbMirrorPromise; // wait for the mirror so failures are visible before the process exits
+    console.log("Varmen DB mirror finished (see above for success/failure).");
+  }
 }
 
 main().catch((err) => {

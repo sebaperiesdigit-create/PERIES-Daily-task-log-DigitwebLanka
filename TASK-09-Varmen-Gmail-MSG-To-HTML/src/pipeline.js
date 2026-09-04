@@ -192,8 +192,20 @@ function detectLoanStatus({ emails, record, previouslyStored, config }) {
 
 /**
  * Runs the full local pipeline: emails -> parse -> ack draft (if newly due) ->
- * store (idempotent upsert) -> standalone HTML. Never sends anything, never
- * touches Varmen DB - purely local files.
+ * store (idempotent upsert) -> standalone HTML. Never sends anything.
+ *
+ * `pgStore` (optional, default undefined - added 2026-09-04, off by
+ * default): when provided (a src/pg-store.js `PgStore` instance), the same
+ * records just written to the JSON store are ALSO mirrored into
+ * welfare.loan_requests, best-effort, in parallel - per the explicit
+ * "parallel JSON+DB, no cutover" decision (see docs/HANDOVER.md). This
+ * function stays synchronous either way: the mirror is fired without being
+ * awaited here (so no caller/test needs to change), and its promise is
+ * returned as `dbMirrorPromise` so a caller that DOES want to wait for it
+ * (or see whether it failed) can. A DB failure is caught and logged here -
+ * it must never throw out of runPipeline or block/break the JSON-store-
+ * driven result. When `pgStore` is omitted, `dbMirrorPromise` is null and
+ * nothing about Varmen DB is touched, exactly as before.
  *
  * Email source: pass `emails` directly (e.g. from src/gmail-fetch.js) to skip
  * loading fixtures - used by the Stage 2 live pipeline. When `emails` is
@@ -227,6 +239,7 @@ export function runPipeline({
   now,
   backfillMode = false,
   correctionsPath,
+  pgStore,
 }) {
   const emails = providedEmails ?? loadFixtureEmails(fixturesDir);
   const store = new Store(storePath);
@@ -303,5 +316,15 @@ export function runPipeline({
     fs.writeFileSync(outputHtmlPath, html, "utf8");
   }
 
-  return { emails, parsed: withAcks, allRecords, html };
+  // Optional, parallel DB mirror (see doc comment above) - never awaited
+  // here (keeps this function synchronous for every existing caller/test),
+  // never allowed to throw out of runPipeline. `dbMirrorPromise` is null
+  // when pgStore isn't provided, exactly the pre-2026-09-04 behavior.
+  const dbMirrorPromise = pgStore
+    ? pgStore.upsertAll(allRecords).catch((err) => {
+        console.error("Varmen DB mirror failed (JSON store is unaffected):", err.message);
+      })
+    : null;
+
+  return { emails, parsed: withAcks, allRecords, html, dbMirrorPromise };
 }
