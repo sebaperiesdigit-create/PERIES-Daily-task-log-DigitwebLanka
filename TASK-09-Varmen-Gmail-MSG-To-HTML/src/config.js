@@ -117,7 +117,27 @@ import { isReplyMessage } from "./gmail-reply-marker.js";
 // Since this affects already-fetched real data (the v9 historical pull),
 // re-running the pipeline against the same messages re-derives corrected
 // values automatically - no separate backfill/cleanup script needed.
-export const PARSER_VERSION = "v10";
+// v11 (2026-09-04): TWO MORE REAL BUGS, found by the user reviewing actual
+// real Gmail threads (screenshots) right after the v10 re-run had already
+// completed:
+//   1. Amount pattern only ever recognized "LKR" as a currency prefix.
+//      Real evidence (multiple real threads, requester emails AND staff
+//      replies): "Rs." is the actual standard prefix used. Not just a
+//      formatting gap - "a welfare loan of Rs. 100,000" broke BOTH
+//      extraction patterns at once (currency pattern didn't recognize
+//      "Rs."; the bare-number fallback requires digits immediately after
+//      "of"/"for", and "Rs. " in between breaks that too), sending an
+//      otherwise-complete request to needs_review. Fixed: amountPatterns
+//      now accepts "LKR" or "Rs" (word-boundary-anchored so it can never
+//      match mid-word, e.g. inside "Mrs.").
+//   2. loanTypeBodyPhrases only matched the noun form "education loan" -
+//      real evidence: a real requester wrote "an educational loan" (the
+//      adjective form), which didn't match at all (masked in that specific
+//      case only because the subject line separately resolved the type).
+//      Fixed: added "educational loan" as an explicit additional phrase.
+// Same as v10: since this affects already-fetched real data, re-running
+// the pipeline re-derives corrected values automatically.
+export const PARSER_VERSION = "v11";
 
 // Exported separately from `isQualifying` so src/pipeline.js can reuse the
 // exact same "does this subject even look loan-related" check when deciding
@@ -171,8 +191,19 @@ export const config = {
   // Never a broad bare-number scan: that would catch phone numbers, dates, IDs,
   // reference numbers, or - when a message mentions two different amounts - pick
   // the wrong one. Any ambiguity or absence -> null -> needs_review.
+  //
+  // v10 FIX (2026-09-04): real evidence (multiple real threads, both
+  // requester emails AND staff replies) showed "Rs." is the actual standard
+  // currency prefix used, not "LKR" - "Rs." was missing entirely. This was
+  // not just a formatting gap: phrasing like "a welfare loan of Rs. 100,000"
+  // broke BOTH patterns at once (currency pattern didn't recognize "Rs.";
+  // the bare-number fallback requires digits immediately after "of"/"for"
+  // with nothing in between, and "Rs. " sitting in the middle breaks that
+  // too) - sending an otherwise-complete, valid request to needs_review.
+  // \b added before the prefix so "Rs" can never match mid-word (e.g. inside
+  // "Mrs.").
   amountPatterns: [
-    /LKR\.?\s*[\d][\d,]*/i,
+    /\b(?:LKR|Rs)\.?\s*[\d][\d,]*/i,
     /(?:loan|amount)s?\s+(?:of|for)\s+([\d][\d,]{2,})/i,
   ],
   // Digit-length bounds (after stripping commas) for the bare-number fallback
@@ -203,9 +234,14 @@ export const config = {
   // match "Welfare" on nearly every message. Requires the type word to
   // appear immediately next to "loan" (e.g. "medical loan", "welfare
   // loan") - a real, deliberate statement of type, not incidental prose.
+  // "educational loan" added v10 (2026-09-04) - real evidence: a real
+  // requester wrote "an educational loan", the adjective form, which the
+  // noun form "education loan" alone didn't match (no space between
+  // "education" and "-al").
   loanTypeBodyPhrases: [
     ["personal loan", "Personal"],
     ["education loan", "Education"],
+    ["educational loan", "Education"],
     ["medical loan", "Medical"],
     ["emergency loan", "Emergency"],
     ["welfare loan", "Welfare"],

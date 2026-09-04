@@ -699,6 +699,62 @@ test("Amount: a bare number with no currency prefix is normalized to \"LKR <comm
   assert.equal(record.amount, "LKR 250,000");
 });
 
+test("Amount: \"Rs.\" is recognized as a currency prefix, same as \"LKR\" (real bug, fixed 2026-09-04 - real requesters/staff use \"Rs.\", not \"LKR\")", () => {
+  const email = {
+    id: "rs-prefix-1",
+    threadId: "rs-prefix-1",
+    from: "Someone <someone@example-welfare.test>",
+    subject: "Personal Loan Request",
+    receivedAt: "2026-08-30T09:00:00+05:30",
+    bodyText: "Dear Welfare Team,\r\n\r\nI would like to request a loan of Rs. 100,000 due to urgent needs.\r\n\r\nKind regards,\r\nSomeone\r\n",
+  };
+  const record = parseEmail(email, config);
+  assert.equal(record.amount, "Rs. 100,000");
+});
+
+test("Amount: \"a loan of Rs. X\" no longer breaks BOTH extraction patterns at once (real bug: \"Rs. \" sitting between \"of\" and the digits defeated the bare-number fallback too)", () => {
+  const email = {
+    id: "rs-both-patterns-1",
+    threadId: "rs-both-patterns-1",
+    from: "Someone <someone@example-welfare.test>",
+    subject: "Welfare Loan Request",
+    receivedAt: "2026-08-30T09:00:00+05:30",
+    bodyText:
+      "Dear Welfare Team,\r\n\r\nI am writing to respectfully request a welfare loan of Rs. 150,000 due to a personal matter.\r\n\r\nKind regards,\r\nSomeone\r\n",
+  };
+  const record = parseEmail(email, config);
+  assert.equal(record.parseStatus, "ok", "must not land in needs_review just because of the 'Rs.' prefix");
+  assert.equal(record.amount, "Rs. 150,000");
+});
+
+test("Amount: \"Rs\" must never match mid-word (e.g. inside \"Mrs\")", () => {
+  const email = {
+    id: "rs-word-boundary-1",
+    threadId: "rs-word-boundary-1",
+    from: "Someone <someone@example-welfare.test>",
+    subject: "Personal Loan Request",
+    receivedAt: "2026-08-30T09:00:00+05:30",
+    bodyText:
+      "Dear Welfare Team,\r\n\r\nMrs. Fernando has advised me to request a loan of 120000 due to urgent needs.\r\n\r\nKind regards,\r\nSomeone\r\n",
+  };
+  const record = parseEmail(email, config);
+  assert.equal(record.amount, "LKR 120,000", "must fall through to the bare-number pattern, not false-match 'rs' inside 'Mrs'");
+});
+
+test("Loan Type: body phrase \"educational loan\" (adjective form) is recognized, not just \"education loan\" (real bug: a real requester used the adjective form)", () => {
+  const email = {
+    id: "educational-adjective-1",
+    threadId: "educational-adjective-1",
+    from: "Someone <someone@example-welfare.test>",
+    subject: "Loan Request", // deliberately generic - forces the body phrase to resolve it
+    receivedAt: "2026-08-30T09:00:00+05:30",
+    bodyText: "Dear Welfare Team,\r\n\r\nI would like to request an educational loan of LKR 100,000.\r\n\r\nKind regards,\r\nSomeone\r\n",
+  };
+  const record = parseEmail(email, config);
+  assert.equal(record.loanType, "Education");
+  assert.equal(record.loanTypeSource, "body");
+});
+
 test("Loan Type: an explicit subject+body \"personal loan\" statement is never overridden by reason-inference (real regression, fixed 2026-09-04)", () => {
   // The exact bug: subject "Personal Loan Request" + body "a personal loan
   // of..." are two explicit, deliberate statements - a reason that happens
