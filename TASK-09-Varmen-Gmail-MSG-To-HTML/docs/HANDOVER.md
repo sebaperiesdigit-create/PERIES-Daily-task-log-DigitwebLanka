@@ -37,6 +37,68 @@ The full staged rollout plan (approved, revised) lives at
 `C:\Users\LED 269\.claude\plans\flickering-beaming-brooks.md` — read that too
 before doing anything Gmail/DB/deployment-related.
 
+## Future design question — auto-updating the live page(s) (explored 2026-09-04, NOT decided, nothing built)
+
+User asked: once Stage 3 (DB) exists, does a new loan request need to
+auto-update the live HTML somewhere staff/others can see it — and could
+that be both Stage 4's planned internal page AND the hub-push Vercel page?
+Explored via grill-me, purely as analysis — **nothing built, no code
+written, no decision made.**
+
+**Shared constraint for any version of this:** none of it can be truly
+real-time without adding scheduling/cron, which has been explicitly
+off-limits in this codebase throughout (see "Do NOT do" below). Right now
+new mail is only picked up when `run-live.js` is run by hand — "auto-update"
+below means "reflects the latest run," not "watches the mailbox live."
+
+**Three options laid out, with the case for each:**
+
+- **A — Stage 4's internal page only.** The page live-queries
+  `welfare.loan_requests` on each load (or short interval) via `renderHtml()`
+  — no separate "push" step, a new DB row is just visible next time anyone
+  loads the page. Simplest, no cron, matches the original Stage 4 design
+  exactly, and stays fully within this codebase's own access control
+  (network isolation, already gated on Varmen/IT). **Recommended as the
+  primary target**, independent of the exposure question.
+- **B — hub-push only, once properly secured.** Would need a script to
+  regenerate the HTML and re-run `push_to_hub.js` (same slug, to update in
+  place) after each pipeline run. Blocked on someone who owns/administers
+  the Varmen AIOS hub adding real authentication first — that's outside
+  this codebase's control. Automating pushes to it *before* that fix would
+  make the confirmed exposure worse, not better.
+- **C — both, in parallel.** Stage 4 page live-queries as in A; a separate
+  script also regenerates + re-pushes to the hub as in B, independently (one
+  failing doesn't block the other). Only makes sense if the two genuinely
+  serve different audiences.
+
+**Points that would validate C specifically** (asked for and given
+2026-09-04, worth preserving since they're the actual reasoning, not just
+the conclusion):
+1. Different reach — Stage 4's page is internal-only by design; a broader
+   audience outside the internal network (e.g. wider Varmen stakeholders)
+   can only be reached via the hub.
+2. The hub appears to be this whole workspace's standing convention, not a
+   one-off — `hub-push/` was copied in from `Peries-Skills-Master` and is
+   shared across multiple "members"/tasks in the same table, not unique to
+   Task 09.
+3. Stage 4 has a hard, externally-blocked gate with no timeline (Varmen/IT
+   have to respond first) — the hub, once secured, could be a working
+   interim/parallel channel not hostage to that timeline.
+4. Redundancy — a second, independent way to check status if the internal
+   server ever has downtime or Stage 4 stalls.
+5. Matches what's already been done this session — the hub was already used
+   for exactly this kind of visibility, and a shareable status link fits a
+   supervisor-reporting need Stage 4's internal-only page can't serve on its
+   own.
+
+**The caveat that applies regardless of which option is eventually chosen:**
+none of these points justify running the hub publicly exposed in the
+meantime — fixing that access-control gap (see the exposure banner above)
+is a prerequisite for B and C, not an alternative to it.
+
+**Status: fully open. No option has been chosen. Revisit only when the user
+explicitly picks a direction — do not default to one.**
+
 ## TL;DR status
 
 **52/52 tests passing. `PARSER_VERSION = "v8"`.** Stage 1 (Gmail read-only) and
