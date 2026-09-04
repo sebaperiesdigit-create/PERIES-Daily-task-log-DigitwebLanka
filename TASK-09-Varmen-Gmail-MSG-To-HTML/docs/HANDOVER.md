@@ -1,5 +1,37 @@
 # Task 09 — Handover (last updated 2026-09-04, end of session)
 
+## ✅ Loan-Status-needs-review records now also listed in the review queue
+
+Per explicit user request (`src/html.js`): an "ok" record whose Loan
+Status is "Needs manual review" now ALSO appears in the review queue
+section at the bottom of the page - not just as a badge in the main
+table. Distinct wording from an extraction-incomplete row - a "Loan
+status review" badge, never the generic "Missing/ambiguous field(s)"
+note, since nothing is actually missing on these records. Stays in the
+main table too - it's a fully valid, complete request, not an extraction
+problem.
+
+**Deliberately did NOT extend `data/live/corrections.json`** to cover
+this - the existing fix path (staff replies again in the thread with
+"Scheduled for `<Month>`", picked up automatically by `detectLoanStatus`
+on the next run) stays the sole way to resolve it. Staff are the sole
+authority on Loan Status; a second manual-override path would create two
+competing ways to set the same field. The review queue's only job here is
+visibility - the in-page note explains the staff-reply fix path directly.
+
+New 3rd stat tile, review-section note rewritten to explain both
+situations, table caption renamed "Needs review" → "Review queue". 2 new
+tests, 81/81 passing.
+
+**Applied to real output already**: `output/live/loan-requests.html`
+re-rendered from the existing `data/live/store.json` - a pure local
+re-render (no Gmail call, no DB write, script deleted after use) rather
+than another live fetch just for a UI-only change. **Confirmed: real data
+has 5 records with Loan Status "Needs manual review"** - all 5 now show
+correctly in the review queue with the new badge/wording (verified by
+counting the exact badge HTML, not just the phrase, which also appears in
+the static instructional note).
+
 ## ✅ ALL 13 REAL RECORDS NOW RESOLVED — 13 ok / 0 needs_review
 
 Per explicit user instruction ("fill in the corrections and run it"):
@@ -515,9 +547,10 @@ explicitly picks a direction — do not default to one.**
 
 ## TL;DR status
 
-**79/79 tests passing. `PARSER_VERSION = "v12"`** (see the v10/v11/v12
-banner at the very top of this file for the three most recent real-bug
-fixes). Stage 1 (Gmail read-only) and
+**81/81 tests passing. `PARSER_VERSION = "v12"`** (see the banners at the
+very top of this file for the most recent changes: the review-queue
+dual-listing feature, then the three real-bug fixes before it - v10/v11/v12).
+Stage 1 (Gmail read-only) and
 Stage 2 (full Gmail integration) of the 5-stage plan are built. On 2026-09-03
 they were run successfully against the real inbox twice in draft-only backfill
 mode (zero acknowledgements created, as required). On 2026-09-04 a genuine
@@ -812,7 +845,7 @@ new information):**
 ## Quick reference — commands
 
 ```bash
-npm test                                    # 79 tests, should all pass
+npm test                                    # 81 tests, should all pass
 npm run build                               # demo pipeline (safe, no network)
 node --env-file=.env src/run-live.js        # REAL live pull - ask first
 node --env-file=.env src/gmail-auth.js      # re-auth if the refresh token ever fails
