@@ -78,7 +78,7 @@ mailbox yet. The next real historical pull (see the missing-requests
 section right below) will use this v9 logic automatically once it runs,
 including these 4 new tracked fields.
 
-## 🔴 HIGHEST PRIORITY: Stage 2 was missing real loan requests — ROOT CAUSE FOUND, FIX BUILT, NOT YET RUN
+## ✅ RESOLVED: Stage 2 was missing real loan requests — historical catch-up run, success
 
 **User reported (2026-09-04): multiple loan requests from various
 requesters were missing from `output/live/loan-requests.html`** — not
@@ -116,15 +116,34 @@ dropped the rest too, with no warning. Fixed alongside the date-window fix.
    pagination fix itself calls the real Gmail API and is unverified except
    manually, same as `db.js`/`gmail-fetch.js`'s other real-API functions.
 
-**Not yet run.** The actual historical catch-up requires setting BOTH
-`GMAIL_FETCH_SINCE_DAYS=all` AND `FORCE_BACKFILL=true` in real `.env`,
-then running `run-live.js` for real — a wider, longer Gmail read than any
-previous run, and (since `VARMEN_DB_MIRROR=true` is also on) would mirror
-all newly-discovered historical records into `welfare.loan_requests` too.
-**Needs its own explicit go-ahead before running**, same as every other
-live/DB action this session. After that one-time run, remember to set
-`GMAIL_FETCH_SINCE_DAYS` back to a normal rolling window (e.g. 30) and
-`FORCE_BACKFILL` back off for ongoing day-to-day runs.
+**HISTORICAL CATCH-UP RUN, 2026-09-04 — SUCCESS.** Per explicit go-ahead:
+`GMAIL_FETCH_SINCE_DAYS=all` + `FORCE_BACKFILL=true` blind-appended to real
+`.env` (checked key names weren't already present first, same discipline
+as every other `.env` edit this session), then
+`node --env-file=.env src/run-live.js` run for real. Result:
+- Fetched all **38** subject-matching messages across the full mailbox
+  history (matches the earlier count-only preview exactly - no surprises).
+- **Store went from 5 records (4 ok / 1 needs_review) to 13 records (8 ok
+  / 5 needs_review)** - the missing older requests are recovered.
+- **Zero new acknowledgement drafts** (`FORCE_BACKFILL=true` worked as
+  designed) - still exactly 4 total, cumulative from before.
+- **DB mirror confirmed via a read-only query**: 13 rows in
+  `welfare.loan_requests`, matching the JSON store exactly.
+  `loan_type_source` breakdown across all 13: 10 resolved via explicit
+  subject statements, 3 via the true no-signal default - none needed body/
+  reason-inference/staff-reply for this batch (real-world confirmation
+  that the earlier "explicit subject wins" fix and the conservative
+  reason-keyword list are behaving as intended on real data, not just
+  synthetic tests).
+- **Both temporary flags reverted immediately after** - confirmed removed
+  from real `.env` (checked by key name), all other keys
+  (`VARMEN_EXPECTED_*`, `VARMEN_DB_MIRROR`, `VARMEN_DB_*`) confirmed still
+  intact. `run-live.js` is back to normal 30-day rolling-window behavior
+  for any future call.
+
+**The 5 needs_review records are now genuinely actionable** via
+`data/live/corrections.json` (see the corrections mechanism section
+above) - this was the whole point of recovering them.
 
 ## 🔴 CONFIRMED: real loan-requester data is PUBLICLY EXPOSED, no login required
 
