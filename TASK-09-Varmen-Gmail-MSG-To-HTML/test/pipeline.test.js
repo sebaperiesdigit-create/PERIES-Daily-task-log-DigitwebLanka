@@ -102,16 +102,22 @@ test("HTML special characters in fixture values are escaped, not rendered as mar
   const injected = allRecords.find((r) => r.sourceId === "fixture-msg-0004");
   assert.ok(injected);
   assert.equal(injected.parseStatus, "ok");
-  assert.match(injected.requestedBy, /<Requester>/); // raw stored value keeps the literal text
+  // From header display name ("Test & Co \"Requester\"", 4 words) has more
+  // name parts than the plain body sign-off ("Test Requester C", 3 words),
+  // so it wins the "fullest name wins" comparison - raw stored value keeps
+  // the literal special characters (real names never contain "&"/quotes,
+  // but the header is only cleaned, never shape-rejected - see
+  // looksLikeName in src/parser.js, which applies to the sign-off path
+  // only, not the header path).
+  assert.match(injected.requestedBy, /Test & Co "Requester"/);
   assert.match(injected.reason, /<priority>/);
 
-  // The raw angle brackets must never appear unescaped in the output HTML.
-  assert.doesNotMatch(html, /<Requester>/);
+  // The raw special characters must never appear unescaped in the output HTML.
+  assert.doesNotMatch(html, /Co "Requester"/); // raw quote must not appear unescaped
   assert.doesNotMatch(html, /<priority>/);
   assert.doesNotMatch(html, /<script/i);
   // They must appear as escaped entities instead.
-  assert.match(html, /&lt;Requester&gt;/);
-  assert.match(html, /Test &amp; &lt;Requester&gt; &quot;C&quot;/);
+  assert.match(html, /Test &amp; Co &quot;Requester&quot;/);
   assert.match(html, /&amp; &lt;priority&gt; books/);
 });
 
@@ -391,6 +397,47 @@ test("sign-off is still preferred when it is at least as full as the From header
   };
   const record = parseEmail(email, config);
   assert.equal(record.requestedBy, "M. Firstname");
+});
+
+test("Requested By: an incidental mid-email use of a sign-off word (e.g. \"in regards to\") is never captured as the name (real bug, fixed 2026-09-04)", () => {
+  // Real bug: the sign-off regex matched the FIRST occurrence of "regards"
+  // anywhere in the body - including inside ordinary prose like "in regards
+  // to my request" - and, since unwrapHardLineWraps merges an entire
+  // paragraph onto one line, captured everything up to the end of that
+  // paragraph as the "name". Real output: "hope for your favorable
+  // consideration. Thank you for your time and support." got stored as a
+  // requester's name. Fixed two ways: (1) the LAST sign-off match wins, not
+  // the first, and (2) every candidate must be name-shaped (every word
+  // starts uppercase) - this fixture exercises both, since the genuine
+  // sign-off with the real name comes after the incidental "regards" usage.
+  const email = {
+    id: "regression-mid-email-regards-1",
+    threadId: "regression-mid-email-regards-1",
+    from: "Someone <someone@example-welfare.test>",
+    subject: "Education Loan Request",
+    receivedAt: "2026-08-31T09:00:00+05:30",
+    bodyText:
+      "Dear Welfare Team,\r\n\r\nI am writing in regards to my studies, where I have been accepted into a program. I hope for your favorable consideration. Thank you for your time and support.\r\n\r\nKind regards,\r\nReal Student Name\r\n",
+  };
+  const record = parseEmail(email, config);
+  assert.equal(record.requestedBy, "Real Student Name", "must use the genuine, later sign-off - not the incidental mid-paragraph 'regards' usage");
+});
+
+test("Requested By: if the ONLY sign-off match is not name-shaped, falls back to the From header instead of storing junk", () => {
+  const email = {
+    id: "regression-junk-signoff-1",
+    threadId: "regression-junk-signoff-1",
+    from: "Fallback Name <fallback@example-welfare.test>",
+    subject: "Education Loan Request",
+    receivedAt: "2026-08-31T09:00:00+05:30",
+    bodyText:
+      "Dear Welfare Team,\r\n\r\nI am writing in regards to my studies. I hope for your favorable consideration. Thank you for your time and support.\r\n",
+    // No genuine sign-off anywhere - the only "regards" match is the
+    // incidental mid-paragraph one, which must be rejected as not
+    // name-shaped, falling back to the From header.
+  };
+  const record = parseEmail(email, config);
+  assert.equal(record.requestedBy, "Fallback Name");
 });
 
 test("missing amount entirely (no currency, no anchored number) becomes needs_review", () => {

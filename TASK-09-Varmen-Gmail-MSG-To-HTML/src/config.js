@@ -93,7 +93,31 @@ import { isReplyMessage } from "./gmail-reply-marker.js";
 //   - Reason: cosmetic-only formatting - capitalized first letter, a
 //     trailing period added if missing. Extraction boundaries (which text
 //     gets captured) are unchanged.
-export const PARSER_VERSION = "v9";
+// v10 (2026-09-04): REAL PRODUCTION BUG - the user reviewed the actual live
+// output (after the v9 historical catch-up run) and found a "Requested By"
+// value that was clearly not a name: an entire closing sentence ("hope for
+// your favorable consideration. Thank you for your time and support.").
+// Root cause: `extractRequestedBy`'s sign-off regex matched the FIRST
+// occurrence of any configured phrase (including the bare word "regards")
+// ANYWHERE in the body - including incidental mid-paragraph prose like "...
+// in regards to my studies..." - with no word-boundary/shape validation,
+// and captured everything up to the next line break. Since
+// unwrapHardLineWraps merges an entire paragraph onto one line, that
+// capture ran to the end of the whole paragraph. The existing 80-char
+// length cap didn't catch it (that specific junk capture was 76 chars).
+// Fixed two ways in `extractRequestedBy`/`looksLikeName` (src/parser.js):
+//   1. Uses the LAST sign-off match, not the first - a genuine sign-off is
+//      the final one before the actual signature.
+//   2. Every candidate must be name-shaped (every word starts with a
+//      capital letter, max 5 words) - rejects prose fragments outright,
+//      not just via a length cap. Applies to the sign-off path only, never
+//      the From-header path (a header name is only cleaned, never shape-
+//      rejected - it can legitimately be lowercase, e.g. this org's
+//      account-naming convention).
+// Since this affects already-fetched real data (the v9 historical pull),
+// re-running the pipeline against the same messages re-derives corrected
+// values automatically - no separate backfill/cleanup script needed.
+export const PARSER_VERSION = "v10";
 
 // Exported separately from `isQualifying` so src/pipeline.js can reuse the
 // exact same "does this subject even look loan-related" check when deciding

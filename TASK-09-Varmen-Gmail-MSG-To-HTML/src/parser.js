@@ -239,6 +239,25 @@ function cleanExtractedName(name, config) {
 }
 
 /**
+ * A real name is short and every word starts with a capital letter - real
+ * bug caught 2026-09-04: a phrase like "...in regards to my request..."
+ * mid-paragraph matched the sign-off regex below (it only required the bare
+ * word "regards" with no word-boundary/shape check), and since
+ * unwrapHardLineWraps merges an entire paragraph onto one line, the capture
+ * ran to the end of that whole paragraph - "hope for your favorable
+ * consideration. Thank you for your time and support." got stored as a
+ * "name". A real name never starts a word with a lowercase function word
+ * ("for", "your", "and", ...), so requiring every word to start uppercase
+ * rejects this shape of junk outright rather than relying on a length cap
+ * alone (that specific junk capture was 76 chars - under the old 80 cap).
+ */
+function looksLikeName(text) {
+  const words = text.split(/\s+/).filter(Boolean);
+  if (words.length === 0 || words.length > 5) return false;
+  return words.every((word) => /^[A-Z]/.test(word));
+}
+
+/**
  * Real inbox evidence (2026-09-04): a sign-off is often just a first name
  * ("Kind regards, Sajeepan") while this org's Gmail accounts are labeled
  * "<firstname> digitweblanka" - but occasionally the From header's display
@@ -248,6 +267,12 @@ function cleanExtractedName(name, config) {
  * candidates and keep whichever has MORE name parts (a strict proxy for
  * "fuller name"); ties keep the sign-off, since it's the requester's own
  * words about their own name.
+ *
+ * FIX 2026-09-04 (real bug, see looksLikeName above): uses the LAST match
+ * of a sign-off phrase, not the first - a genuine sign-off is the final one
+ * before the actual signature, whereas an earlier incidental use of a
+ * phrase like "regards" in ordinary prose is not - plus every candidate is
+ * now shape-validated, not just length-capped.
  */
 function extractRequestedBy(newText, fromHeader, config) {
   const alternation = config.signOffPhrases.map(escapeRegExp).join("|");
@@ -256,11 +281,14 @@ function extractRequestedBy(newText, fromHeader, config) {
   // regards, Someone") rather than always on two lines - \s+ matches both
   // that and a genuine paragraph break (still present as \n\n).
   const signOffRe = new RegExp(`(?:${alternation})[,:.]?\\s+([^\\r\\n]+)`, "i");
-  const match = signOffRe.exec(newText);
+  const signOffMatches = findAllMatches(newText, signOffRe);
   let signOffName = null;
-  if (match) {
-    const name = cleanExtractedName(match[1].trim(), config);
-    if (name.length > 0 && name.length < 80) signOffName = name;
+  if (signOffMatches.length > 0) {
+    const lastMatch = signOffMatches[signOffMatches.length - 1];
+    const candidate = cleanExtractedName(lastMatch[1].trim(), config);
+    if (candidate.length > 0 && candidate.length < 60 && looksLikeName(candidate)) {
+      signOffName = candidate;
+    }
   }
 
   let headerName = null;
