@@ -11,24 +11,29 @@ This directly contradicts the access-control model Stage 4 was built
 around (network-isolation as the *only* control, since there's no
 app-level login) — `hub-push/` bypassed that entirely.
 
-**As of end of this session, the exposure has NOT been taken down** — no
+**As of end of this session, the exposure has NOT been taken down.** No
 unilateral action was taken (no credentials for the hub DB were ever used
-in this session; `hub-push/` was never run by this session). This is the
-single highest-priority item to resume with: whether to unpublish/delete
-the hub_pages row (id 425, slug `Digit-Web-loan-requests`), pending the
-user's decision on how (their own action, this session helping via a
-script, or looping in whoever owns the Varmen AIOS hub).
+in this session; `hub-push/` was never run by this session).
 
-## ⏸ PAUSED HERE (2026-09-04) — read before resuming
+**Explicit sequencing decision (2026-09-04):** when given a 3-item recap of
+open items — (a) this exposure, (b) the Stage 3 DB pause, (c) the
+auto-update design question — **the user said: set (a) aside for now
+("aware of it, ignore it for now"), actively resume (b) Stage 3, and keep
+(c) pending for later.** So Stage 3 work below is ACTIVE again, not paused.
+**This does not mean the exposure is resolved or was decided against
+fixing** — it's explicitly deprioritized, not closed. Do not close or
+remove this section on your own judgment; only the user reopening/resolving
+it should change this.
 
-Per user + supervisor discussion, work on Stage 3 (Varmen DB) stops at this
-point deliberately. **Stage 3 is drafted but intentionally NOT continued
-further** — resume only when the user explicitly says to pick it back up.
-Nothing about this pause changes any of the "Do NOT do" rules below; if
-anything, be more conservative about Stage 3 until told otherwise. See
-"Stage 3" section below for exactly what's built vs. not, and the ordered
-next-steps list to resume from. **This pause is separate from, and lower
-priority than, the confirmed public-exposure issue above.**
+## ▶️ Stage 3 (Varmen DB) — RESUMED 2026-09-04, active
+
+Per explicit user instruction, Stage 3 work is back in progress (see
+sequencing decision above). See the "Stage 3" section further below for
+everything drafted so far (SQL, `src/db.js`, `src/db-migrate.js` — still not
+run) and the ordered next-steps list. Continue from wherever that list left
+off; do not re-litigate the decisions already locked in during the earlier
+grill-me session (execution owner, schema-exists check timing, parallel
+JSON+DB store strategy, `updated_at` handling) without new information.
 
 **Read this file first when resuming this task.** It's the single source of
 truth for "where did we leave off" — more current than `docs/README.md`
