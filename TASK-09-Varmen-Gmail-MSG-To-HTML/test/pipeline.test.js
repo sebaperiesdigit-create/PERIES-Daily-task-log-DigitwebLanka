@@ -857,6 +857,21 @@ test("Reason: cosmetic formatting only - capitalizes the first letter and adds a
   assert.equal(record.reason, "Home renovation costs.");
 });
 
+test("Reason: \"to assist with\" trigger phrase (real bug: a real email's reason wasn't recognized by any existing phrase)", () => {
+  const email = {
+    id: "reason-assist-with-1",
+    threadId: "reason-assist-with-1",
+    from: "Someone <someone@example-welfare.test>",
+    subject: "Personal Loan Request",
+    receivedAt: "2026-08-30T09:00:00+05:30",
+    bodyText:
+      "Dear Team,\r\n\r\nI am writing to kindly request a loan of Rs. 150,000 to assist with the arrangements for my wedding registration.\r\n\r\nKind regards,\r\nSomeone\r\n",
+  };
+  const record = parseEmail(email, config);
+  assert.equal(record.parseStatus, "ok");
+  assert.equal(record.reason, "The arrangements for my wedding registration.");
+});
+
 test("Staff confirmation reply: fills a genuinely missing Amount/Reason, never overrides an already-set value, flags a disagreement instead", () => {
   const ws = freshWorkspace();
   const originalEmail = {

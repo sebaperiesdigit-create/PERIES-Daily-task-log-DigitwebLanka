@@ -137,7 +137,20 @@ import { isReplyMessage } from "./gmail-reply-marker.js";
 //      Fixed: added "educational loan" as an explicit additional phrase.
 // Same as v10: since this affects already-fetched real data, re-running
 // the pipeline re-derives corrected values automatically.
-export const PARSER_VERSION = "v11";
+// v12 (2026-09-04): user asked directly whether same-sender thread replies
+// are actually read in full - investigation confirmed they are FETCHED and
+// pattern-checked, but only against the same narrow set of trigger
+// phrases, not holistically understood. Checked the real data: all 3
+// remaining needs_review records were missing Reason specifically, and 2
+// real screenshots showed why - phrasings my reasonTriggerPhrases didn't
+// cover. Per explicit user decision (safe strategy: add specific phrases
+// as found, not a broader inference fallback): added "to assist with"
+// (real evidence: "...to assist with the arrangements for my wedding
+// registration"). One of the 2 real examples in this review genuinely has
+// NO trigger phrase at all (reason stated as the leading clause, no
+// connector word) - this strategy cannot solve that one; it stays
+// needs_review, left for the corrections file rather than guessing.
+export const PARSER_VERSION = "v12";
 
 // Exported separately from `isQualifying` so src/pipeline.js can reuse the
 // exact same "does this subject even look loan-related" check when deciding
@@ -288,7 +301,15 @@ export const config = {
   // BROADENED 2026-09-03: "to support" added after a real email said "...to
   // support my current financial requirements" - none of the original 3
   // phrases matched it.
-  reasonTriggerPhrases: ["due to", "because of", "for the purpose of", "to support"],
+  // BROADENED v11 (2026-09-04): "to assist with" added after a real email
+  // said "...to assist with the arrangements for my wedding registration".
+  // Kept to the safe, narrow "add exact phrases as found" strategy per
+  // explicit user decision, rather than a broader fallback (e.g. "use the
+  // first sentence") - a real email in the same review had NO trigger
+  // phrase at all (reason stated as the leading clause, no connector word),
+  // which this strategy genuinely cannot solve - left for manual review/
+  // the corrections file rather than guessing.
+  reasonTriggerPhrases: ["due to", "because of", "for the purpose of", "to support", "to assist with"],
 
   // A second, distinct reason pattern - CONFIRMED 2026-09-03 from a real
   // email ("...for personal reasons."). This is a different shape from the
