@@ -1,6 +1,38 @@
 # Task 09 — Handover (last updated 2026-09-04, end of session)
 
-## ✅ v10 + v11: two rounds of REAL bugs found by the user reviewing actual output, both fixed and re-applied
+## ✅ v10 + v11 + v12: three rounds of REAL bugs found by the user reviewing actual output, all fixed and re-applied
+
+**v12 — Reason extraction too narrow, missing real phrasings.** User asked
+directly whether same-sender thread replies are actually read in full.
+Investigation confirmed: yes, every message is fetched and the gap-fill
+mechanism does scan every same-sender reply - but only against the same
+narrow set of exact trigger phrases each time, never holistically read.
+Checked the real data: **all 3 remaining needs_review records were missing
+the same field - Reason - and nothing else.** Real screenshots showed two
+examples: Piranavakanan's reason ("...to assist with the arrangements for
+my wedding registration") didn't match any of the 4 existing trigger
+phrases; Mahima's reason had NO trigger phrase at all (stated as the
+leading clause, no connector word). **Per explicit user decision** (the
+safe strategy - keep adding specific phrases as found, not a broader
+inference fallback that risks over-capturing the way the v10 bug did):
+added `"to assist with"` to `reasonTriggerPhrases`. Mahima's case is
+explicitly left unsolved by this strategy - genuinely no phrase to anchor
+on - stays needs_review, actionable via the corrections file. 1 new
+regression test (synthetic data). `PARSER_VERSION` bumped to `v12`.
+
+**Re-applied to real data immediately, same temporary-flag pattern as
+v10/v11:** store went from 10 ok/3 needs_review to **11 ok/2
+needs_review** - recovered exactly 1 more record, matching the fix's
+expected scope. **Verified via a read-only query**: 13 total rows, all at
+`parser_version = 'v12'` (11 `ok` / 2 `needs_review`, matching the JSON
+store exactly). Both temporary flags reverted immediately after,
+confirmed removed by key name.
+
+**The 2 remaining needs_review records are still genuinely actionable**
+via `data/live/corrections.json` - one of them (Mahima's) is a case this
+review confirmed cannot be solved by adding more trigger phrases; a human
+reading the email and filling in the corrections file is the right path
+for it, not further pattern-matching attempts.
 
 **v10 — "Requested By" storing a whole sentence.** After the v9 historical
 pull, the user reviewed the real live table and found a "Requested By"
@@ -441,9 +473,9 @@ explicitly picks a direction — do not default to one.**
 
 ## TL;DR status
 
-**78/78 tests passing. `PARSER_VERSION = "v11"`** (see the v10/v11 banner
-at the very top of this file for the two most recent real-bug fixes).
-Stage 1 (Gmail read-only) and
+**79/79 tests passing. `PARSER_VERSION = "v12"`** (see the v10/v11/v12
+banner at the very top of this file for the three most recent real-bug
+fixes). Stage 1 (Gmail read-only) and
 Stage 2 (full Gmail integration) of the 5-stage plan are built. On 2026-09-03
 they were run successfully against the real inbox twice in draft-only backfill
 mode (zero acknowledgements created, as required). On 2026-09-04 a genuine
@@ -738,7 +770,7 @@ new information):**
 ## Quick reference — commands
 
 ```bash
-npm test                                    # 78 tests, should all pass
+npm test                                    # 79 tests, should all pass
 npm run build                               # demo pipeline (safe, no network)
 node --env-file=.env src/run-live.js        # REAL live pull - ask first
 node --env-file=.env src/gmail-auth.js      # re-auth if the refresh token ever fails
