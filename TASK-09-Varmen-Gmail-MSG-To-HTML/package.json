@@ -10,7 +10,8 @@
     "gmail:auth": "node --env-file=.env src/gmail-auth.js",
     "gmail:calibrate": "node --env-file=.env src/gmail-calibrate.js",
     "gmail:live": "node --env-file=.env src/run-live.js",
-    "db:migrate": "node --env-file=.env src/db-migrate.js"
+    "db:migrate": "node --env-file=.env src/db-migrate.js",
+    "db:migrate:002": "node --env-file=.env src/db-migrate-002.js"
   },
   "engines": {
     "node": ">=20"

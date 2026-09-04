@@ -59,23 +59,24 @@ changes, now fully built and tested (**72/72 tests passing**,
 4. **Reason**: cosmetic-only formatting - capitalized first letter, a
    trailing period added if missing. Extraction boundaries unchanged.
 
-**New DB columns needed, NOT YET migrated**: `sql/002_add_v9_columns.sql`
-(drafted, reviewed for review but not run) adds `loan_type_source`,
-`discrepancy_note`, `staff_confirmed_from_message_id`,
-`staff_confirmed_at` to `welfare.loan_requests`. `src/pg-store.js` already
-maps these 4 new fields - **if the DB mirror runs again before this
-migration is applied, those 4 columns simply won't exist yet and the
-INSERT will fail** (the mirror's failure is caught/logged, never breaks
-the JSON-store-driven pipeline - but the mirror itself would fail
-entirely until this migration runs). **Do not run
-`node --env-file=.env src/run-live.js` again until either this migration
-runs, or `VARMEN_DB_MIRROR` is temporarily turned back off** - flag this
-to the user before the next live run.
+**DB migration RUN, 2026-09-04 — SUCCESS.** `sql/002_add_v9_columns.sql`
+was reviewed one final time, then run via the new
+`node --env-file=.env src/db-migrate-002.js` (`npm run db:migrate:002`) -
+a new script mirroring `db-migrate.js`'s pattern, but checking whether the
+4 target COLUMNS already exist (not whether the table exists) as its
+idempotency guard, since this is an `ALTER TABLE ... ADD COLUMN`, not a
+`CREATE TABLE`. Identity check passed, all 4 columns added cleanly.
+**Verified independently via a read-only query** (types confirmed:
+`loan_type_source`/`discrepancy_note`/`staff_confirmed_from_message_id`
+are `text`, `staff_confirmed_at` is `timestamptz`). `welfare.loan_requests`
+now has 28 columns total. The DB mirror (`VARMEN_DB_MIRROR=true`, already
+on) is unblocked again for the next live run.
 
-**Not yet applied to real data at all** - none of this has been exercised
-against the real mailbox yet. The next real historical pull (see the
-missing-requests section right below) will use this v9 logic automatically
-once it runs.
+**Not yet applied to real DATA at all** - this only changed the table
+shape; none of the v9 extraction logic has been exercised against the real
+mailbox yet. The next real historical pull (see the missing-requests
+section right below) will use this v9 logic automatically once it runs,
+including these 4 new tracked fields.
 
 ## 🔴 HIGHEST PRIORITY: Stage 2 was missing real loan requests — ROOT CAUSE FOUND, FIX BUILT, NOT YET RUN
 
@@ -687,7 +688,7 @@ node --env-file=.env push_to_hub.js "<full-path-to-html-file>" "<page-slug>" "<p
 | `src/db.js` | Connection pool + `verifyIdentity()`/`withVerifiedClient()` - now actively used (migration ran, `pg-store.js` uses it too) |
 | `src/db-migrate.js` | The migration already ran successfully - re-running it will abort on purpose (table-already-exists guard) |
 | `src/pg-store.js` | Added 2026-09-04 - `PgStore` class, mirrors records into `welfare.loan_requests` in parallel with the JSON store. `VARMEN_DB_MIRROR=true` set 2026-09-04 - actively mirroring on every live run - see "Stage 3" section above. Now maps 4 more v9 fields - **will fail until `sql/002_add_v9_columns.sql` runs**, see the v9 banner at the top |
-| `sql/002_add_v9_columns.sql` | Drafted 2026-09-04, NOT run - adds `loan_type_source`/`discrepancy_note`/`staff_confirmed_from_message_id`/`staff_confirmed_at` to `welfare.loan_requests` |
+| `sql/002_add_v9_columns.sql` / `src/db-migrate-002.js` | Migration RUN 2026-09-04 - added `loan_type_source`/`discrepancy_note`/`staff_confirmed_from_message_id`/`staff_confirmed_at` to `welfare.loan_requests`, verified via read-only query |
 | `test/gmail-fetch.test.js` | Unit tests for `buildSearchQuery`'s date-window/`"all"` logic (no live Gmail call) |
 | `test/pg-store.test.js` | Unit tests for `pg-store.js`'s pure mapping/SQL-building functions (no live DB needed) |
 | `hub-push/` | Separate, already-working publisher: pushes a finished output HTML file to the Varmen AIOS hub (own `package.json`/`node_modules`/`.env`) - see "What actually works right now" above |
