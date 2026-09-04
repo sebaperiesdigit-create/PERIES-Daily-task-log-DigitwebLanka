@@ -116,9 +116,8 @@ in this session — server registered with SSL mode Require):
    ORDER BY ordinal_position;
    ```
 
-**`src/pg-store.js` built and wired in, 2026-09-04 — table is still EMPTY,
-mirror is OFF by default.** Per explicit user instruction ("build
-src/pg-store.js and wire it in"):
+**`src/pg-store.js` built and wired in, 2026-09-04.** Per explicit user
+instruction ("build src/pg-store.js and wire it in"):
 - New `PgStore` class (`src/pg-store.js`), same interface shape as
   `store.js` (`load`/`upsert`/`upsertAll`/`list`, all async — a real
   network call, unlike the JSON file store). Maps the JS record shape to
@@ -137,18 +136,29 @@ src/pg-store.js and wire it in"):
   to wait for/observe it. A DB failure is caught and logged, never thrown
   out of `runPipeline` — the JSON-store-driven result is never at risk from
   a DB problem.
-- `src/run-live.js`: gated behind a **new, OFF-by-default env flag**,
-  `VARMEN_DB_MIRROR`. Only when it's literally set to `"true"` in `.env`
-  does a live run construct a `PgStore` and pass it in; otherwise
-  `pgStore` is `undefined` and Varmen DB is never touched — **confirmed
-  `VARMEN_DB_MIRROR` is NOT set in the real `.env`**, so a `run-live.js`
-  call right now behaves exactly as before this change.
+- `src/run-live.js`: gated behind an env flag, `VARMEN_DB_MIRROR`. Only when
+  it's literally set to `"true"` in `.env` does a live run construct a
+  `PgStore` and pass it in.
 
-**Still needs its own separate go-ahead: actually turning `VARMEN_DB_MIRROR`
-on and running a live pipeline for real** — that's the point where real
-loan-request data would first be written into `welfare.loan_requests`. Do
-not set that flag or otherwise trigger a mirror write on your own
-initiative.
+**MIRROR TURNED ON AND RUN, 2026-09-04 — SUCCESS.** Per explicit user
+instruction ("turn on VARMEN_DB_MIRROR and run a test"):
+- `VARMEN_DB_MIRROR=true` blind-appended to real `.env` (checked the key
+  name wasn't already present first, same discipline as the earlier
+  identity vars — value never read into this session beyond the literal
+  `true` just written).
+- Ran `node --env-file=.env src/run-live.js` for real. Output: identity
+  check passed, "Varmen DB mirror finished" logged with no error.
+- **Verified with a read-only row-count query (`SELECT count(*) FROM
+  welfare.loan_requests`, no PII returned or printed): 5 rows** — exactly
+  matching the 5 records in `data/live/store.json` (4 `ok` / 1
+  `needs_review`) at the time of the run.
+- **This is the first time real loan-request data has ever been written
+  into Varmen DB.** The JSON store remains the pipeline's actual source of
+  truth (HTML rendering, gap-fill, corrections all still read from it) —
+  this write is the parallel mirror, exactly as designed.
+- `VARMEN_DB_MIRROR=true` is now set in real `.env` and stays set — every
+  future `run-live.js` call will keep mirroring unless the user asks to
+  turn it back off. Not something to disable on your own initiative either.
 
 See the "Stage 3" section further below for the full file inventory and the
 decisions locked in during the earlier grill-me session (execution owner,
@@ -232,11 +242,11 @@ they were run successfully against the real inbox twice in draft-only backfill
 mode (zero acknowledgements created, as required). On 2026-09-04 a genuine
 **non-backfill** live run was also done successfully (see below) — the
 acknowledgement-drafting path for real "new mail" is now proven, not just the
-backfill path. **Stage 3 (Varmen DB): `welfare.loan_requests` table EXISTS
-in the real database, and `src/pg-store.js` is built and wired in** — but
-the mirror is OFF by default (`VARMEN_DB_MIRROR` not set), so no real data
-has been written yet; see its own section above/below. Stage 4 (web page),
-Stage 5 (real sending) are **not started**.
+backfill path. **Stage 3 (Varmen DB): `welfare.loan_requests` EXISTS and is
+now RECEIVING REAL DATA** — `VARMEN_DB_MIRROR=true` is set, and a live run
+mirrored 5 real records in successfully (verified by row count). See its
+own section above/below. Stage 4 (web page), Stage 5 (real sending) are
+**not started**.
 
 The user explicitly said (2026-09-03): **"leave [the remaining needs_review
 item] as-is for manual review for now"** — do not build further
@@ -449,12 +459,12 @@ new information):**
 5. ✅ Migration run (`npm run db:migrate`) — `welfare.loan_requests` exists.
 6. ✅ `src/pg-store.js` built (mirrors `src/store.js`'s interface) and wired
    into `runPipeline` via an optional `pgStore` param + the
-   `VARMEN_DB_MIRROR` env flag in `src/run-live.js` — **OFF by default,
-   confirmed not set in real `.env`.**
-7. **NOT DONE — next real step:** setting `VARMEN_DB_MIRROR=true` in `.env`
-   and running `run-live.js` for real, which would write actual loan-request
-   data into `welfare.loan_requests` for the first time. Needs its own
-   separate, explicit go-ahead, same as every other Stage 3 step above.
+   `VARMEN_DB_MIRROR` env flag in `src/run-live.js`.
+7. ✅ `VARMEN_DB_MIRROR=true` set in real `.env`; live run executed;
+   5 records mirrored successfully (verified by row count). **Stage 3's
+   originally-planned steps are now all complete** — real data flows into
+   `welfare.loan_requests` on every `run-live.js` call going forward. See
+   "Stage 3" banner above for the full result.
 
 ## Do NOT do, without the user explicitly asking again
 
@@ -472,11 +482,14 @@ new information):**
 - Do **not** run `npm run db:migrate` again (the table already exists —
   `db-migrate.js` will now abort on purpose if it's re-run, per its
   table-already-exists guard).
-- Do **not** set `VARMEN_DB_MIRROR=true` in `.env` or otherwise trigger a
-  real mirror write on your own initiative. `src/pg-store.js` is built and
-  wired in (see "Stage 3" banner above), but the flag stays off until the
-  user separately, explicitly says to turn it on — that's the point real
-  loan-request data first gets written into `welfare.loan_requests`.
+- Do **not** turn `VARMEN_DB_MIRROR` back off, or otherwise change its
+  setting, on your own initiative. It's `true` in real `.env` as of
+  2026-09-04 and live runs are actively mirroring into
+  `welfare.loan_requests` (see "Stage 3" banner above) — only the user
+  changes this setting.
+- Do **not** run `node --env-file=.env src/run-live.js` without being asked
+  each time (already covered above) — now doubly true, since it also
+  writes to Varmen DB, not just Gmail-read-only.
 - Do **not** delete `.env` or print its contents. DB credentials are already
   in there (`VARMEN_DB_*`), unused by any code.
 
@@ -547,6 +560,6 @@ node --env-file=.env push_to_hub.js "<full-path-to-html-file>" "<page-slug>" "<p
 | `src/db-check.js` | Added 2026-09-04 - read-only identity + schema/table existence check only, deliberately separate from `db-migrate.js` (no DDL). Already run successfully (with SSL) - see "Stage 3" banner above for the result |
 | `src/db.js` | Connection pool + `verifyIdentity()`/`withVerifiedClient()` - now actively used (migration ran, `pg-store.js` uses it too) |
 | `src/db-migrate.js` | The migration already ran successfully - re-running it will abort on purpose (table-already-exists guard) |
-| `src/pg-store.js` | Added 2026-09-04 - `PgStore` class, mirrors records into `welfare.loan_requests` in parallel with the JSON store. Wired into `runPipeline`/`run-live.js` via the OFF-by-default `VARMEN_DB_MIRROR` env flag - see "Stage 3" section above |
+| `src/pg-store.js` | Added 2026-09-04 - `PgStore` class, mirrors records into `welfare.loan_requests` in parallel with the JSON store. `VARMEN_DB_MIRROR=true` set 2026-09-04 - actively mirroring on every live run - see "Stage 3" section above |
 | `test/pg-store.test.js` | Unit tests for `pg-store.js`'s pure mapping/SQL-building functions (no live DB needed) |
 | `hub-push/` | Separate, already-working publisher: pushes a finished output HTML file to the Varmen AIOS hub (own `package.json`/`node_modules`/`.env`) - see "What actually works right now" above |
