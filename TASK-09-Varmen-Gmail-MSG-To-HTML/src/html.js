@@ -68,6 +68,24 @@ function renderExtractedSoFar(record) {
   return found.map(([label, value]) => `<strong>${escapeHtml(label)}:</strong> ${escapeHtml(value)}`).join(" &nbsp;·&nbsp; ");
 }
 
+/**
+ * A record lands in the review queue for one of two DIFFERENT reasons,
+ * rendered with distinct wording (added 2026-09-04, per explicit user
+ * request):
+ *   - "extraction": parseStatus is "needs_review" - a business field
+ *     (Requested By/Amount/Reason/Loan Type) is genuinely missing. Fixed
+ *     via data/live/corrections.json (see the section note below).
+ *   - "status": parseStatus is "ok" (a fully valid, complete request -
+ *     ALSO shown in the main table above, on purpose - pulling it out
+ *     would hide legitimate business data) but Loan Status is "Needs
+ *     manual review" - staff replied, but the wording didn't match the
+ *     recognized "Scheduled for <Month>" pattern. Fixed differently: staff
+ *     replies again in the same Gmail thread with that recognized wording
+ *     - `detectLoanStatus` (src/pipeline.js) automatically picks up the
+ *     newest staff reply on the next run. Deliberately NOT resolvable via
+ *     corrections.json - that would create two competing ways to set the
+ *     same field, and staff are the sole authority on Loan Status.
+ */
 function renderReviewRows(records) {
   if (records.length === 0) {
     return `      <tr class="empty-row">
@@ -75,21 +93,26 @@ function renderReviewRows(records) {
       </tr>`;
   }
   return records
-    .map(
-      (r) => `      <tr>
+    .map((r) => {
+      const isStatusReview = r.parseStatus === "ok";
+      const badgeLabel = isStatusReview ? "Loan status review" : "Needs review";
+      const note = isStatusReview
+        ? `Staff replied but the wording wasn't recognized as a schedule. Reply again in this thread with "Scheduled for &lt;Month&gt;" to resolve - picked up automatically on the next run.`
+        : escapeHtml(r.reviewNotes);
+      return `      <tr>
         <td>
           ${escapeHtml(r.date)}<br>
           <span class="muted-inline">${escapeHtml(r.fromAddress)}</span><br>
           <span class="muted-inline">${escapeHtml(r.subject)}</span>
         </td>
         <td>${renderExtractedSoFar(r)}</td>
-        <td><span class="status-badge">Needs review</span> ${escapeHtml(r.reviewNotes)}</td>
+        <td><span class="status-badge">${badgeLabel}</span> ${note}</td>
         <td>
           <a class="open-link" href="${escapeHtml(gmailMessageLink(r.sourceId))}" target="_blank" rel="noopener noreferrer">Open email &#8599;</a><br>
           <code class="chip">${escapeHtml(r.sourceId)}</code>
         </td>
-      </tr>`
-    )
+      </tr>`;
+    })
     .join("\n");
 }
 
@@ -116,6 +139,14 @@ export function renderHtml(records, { generatedAt = new Date().toISOString() } =
   const needsReview = records
     .filter((r) => r.parseStatus === "needs_review")
     .sort((a, b) => a.sourceId.localeCompare(b.sourceId));
+  // Added 2026-09-04, per explicit user request: an "ok" record whose Loan
+  // Status is "Needs manual review" is ALSO listed in the review queue
+  // below (with distinct wording - see renderReviewRows), so staff have an
+  // actionable place to notice it, not just a badge buried in the main
+  // table. It stays in `valid`/the main table too - it's a fully valid,
+  // complete request, not an extraction problem.
+  const statusNeedsReview = valid.filter((r) => r.status === "Needs manual review");
+  const reviewQueue = [...needsReview, ...statusNeedsReview].sort((a, b) => a.sourceId.localeCompare(b.sourceId));
 
   return `<!doctype html>
 <html lang="en">
@@ -346,6 +377,10 @@ export function renderHtml(records, { generatedAt = new Date().toISOString() } =
         <div class="value">${needsReview.length}</div>
         <div class="label"><span class="stat-dot" aria-hidden="true"></span>Awaiting internal review (not shown above)</div>
       </div>
+      <div class="stat-tile">
+        <div class="value">${statusNeedsReview.length}</div>
+        <div class="label"><span class="stat-dot" aria-hidden="true"></span>Loan status needs manual review (shown above too)</div>
+      </div>
     </div>
 
     <div class="card table-wrap">
@@ -369,10 +404,10 @@ ${renderMainRows(valid)}
 
     <section class="review">
       <div class="card">
-        <p class="note">Internal review queue - incomplete/ambiguous requests that were not added to the table above. Not part of the staff-facing business table. "Open email" links assume you're signed into the relevant Gmail account as your primary browser account - if it opens the wrong inbox, switch accounts first. To resolve a row after reading the original email, add its missing field(s) to <code class="chip">data/live/corrections.json</code> keyed by the id shown below (e.g. <code class="chip">{"&lt;id&gt;": {"loanType": "Personal", "correctedBy": "Your Name"}}</code>) and rerun the live pipeline - it will move into the table above automatically, without overwriting anything already extracted correctly.</p>
+        <p class="note">Internal review queue - two different situations land here, each fixed differently. "Open email" links assume you're signed into the relevant Gmail account as your primary browser account - if it opens the wrong inbox, switch accounts first.<br><br><strong>"Needs review"</strong> rows are incomplete/ambiguous requests not added to the table above - to resolve one after reading the original email, add its missing field(s) to <code class="chip">data/live/corrections.json</code> keyed by the id shown below (e.g. <code class="chip">{"&lt;id&gt;": {"loanType": "Personal", "correctedBy": "Your Name"}}</code>) and rerun the live pipeline.<br><br><strong>"Loan status review"</strong> rows are already complete requests (also shown in the table above) where staff's reply didn't use recognized scheduling wording - to resolve one, reply again in that email thread with <code class="chip">Scheduled for &lt;Month&gt;</code>; it's picked up automatically on the next run, with no file to edit.</p>
         <div class="table-wrap">
           <table>
-            <caption>Needs review</caption>
+            <caption>Review queue</caption>
             <thead>
               <tr>
                 <th scope="col">Received / From / Subject</th>
@@ -382,7 +417,7 @@ ${renderMainRows(valid)}
               </tr>
             </thead>
             <tbody>
-${renderReviewRows(needsReview)}
+${renderReviewRows(reviewQueue)}
             </tbody>
           </table>
         </div>

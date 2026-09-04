@@ -216,7 +216,7 @@
 <body>
   <div class="page">
     <h1>Welfare Loan Requests</h1>
-    <p class="subtitle">Generated 2026-09-04T10:49:16.840Z from local synthetic/redacted fixtures. Not connected to live Gmail.</p>
+    <p class="subtitle">Generated 2026-09-04T11:06:22.229Z from local synthetic/redacted fixtures. Not connected to live Gmail.</p>
 
     <div class="stat-row">
       <div class="stat-tile">
@@ -226,6 +226,10 @@
       <div class="stat-tile">
         <div class="value">3</div>
         <div class="label"><span class="stat-dot" aria-hidden="true"></span>Awaiting internal review (not shown above)</div>
+      </div>
+      <div class="stat-tile">
+        <div class="value">0</div>
+        <div class="label"><span class="stat-dot" aria-hidden="true"></span>Loan status needs manual review (shown above too)</div>
       </div>
     </div>
 
@@ -297,10 +301,10 @@
 
     <section class="review">
       <div class="card">
-        <p class="note">Internal review queue - incomplete/ambiguous requests that were not added to the table above. Not part of the staff-facing business table. "Open email" links assume you're signed into the relevant Gmail account as your primary browser account - if it opens the wrong inbox, switch accounts first. To resolve a row after reading the original email, add its missing field(s) to <code class="chip">data/live/corrections.json</code> keyed by the id shown below (e.g. <code class="chip">{"&lt;id&gt;": {"loanType": "Personal", "correctedBy": "Your Name"}}</code>) and rerun the live pipeline - it will move into the table above automatically, without overwriting anything already extracted correctly.</p>
+        <p class="note">Internal review queue - two different situations land here, each fixed differently. "Open email" links assume you're signed into the relevant Gmail account as your primary browser account - if it opens the wrong inbox, switch accounts first.<br><br><strong>"Needs review"</strong> rows are incomplete/ambiguous requests not added to the table above - to resolve one after reading the original email, add its missing field(s) to <code class="chip">data/live/corrections.json</code> keyed by the id shown below (e.g. <code class="chip">{"&lt;id&gt;": {"loanType": "Personal", "correctedBy": "Your Name"}}</code>) and rerun the live pipeline.<br><br><strong>"Loan status review"</strong> rows are already complete requests (also shown in the table above) where staff's reply didn't use recognized scheduling wording - to resolve one, reply again in that email thread with <code class="chip">Scheduled for &lt;Month&gt;</code>; it's picked up automatically on the next run, with no file to edit.</p>
         <div class="table-wrap">
           <table>
-            <caption>Needs review</caption>
+            <caption>Review queue</caption>
             <thead>
               <tr>
                 <th scope="col">Received / From / Subject</th>

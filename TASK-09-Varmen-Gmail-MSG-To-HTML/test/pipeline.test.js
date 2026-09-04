@@ -1036,6 +1036,69 @@ test("a staff reply that doesn't match the recognized pattern becomes 'Needs man
   assert.equal(target.status, "Needs manual review", "an unrecognized staff reply must never be guessed at");
 });
 
+test("HTML: an 'ok' record with Loan Status 'Needs manual review' is listed in BOTH the main table AND the review queue (2026-09-04, per explicit user request)", () => {
+  const html = renderHtml(
+    [
+      {
+        sourceId: "dual-list-1",
+        parseStatus: "ok",
+        reviewNotes: null,
+        date: "2026-08-20",
+        fromAddress: "Someone <someone@example-welfare.test>",
+        subject: "Personal Loan Request",
+        requestedBy: "Someone",
+        amount: "LKR 30,000",
+        reason: "Home repairs.",
+        loanType: "Personal",
+        status: "Needs manual review",
+      },
+    ],
+    { generatedAt: "2026-09-04T00:00:00.000Z" }
+  );
+
+  // Still in the main table - it's a fully valid, complete request.
+  assert.match(html, /<td>Someone<\/td>/);
+  assert.match(html, /<span class="status-badge">Needs manual review<\/span>/);
+
+  // ALSO listed in the review queue, with DISTINCT wording from an
+  // extraction-incomplete row (never the generic "Missing/ambiguous
+  // field(s)" note, since nothing is actually missing here).
+  assert.match(html, /<span class="status-badge">Loan status review<\/span>/);
+  assert.match(html, /Scheduled for &lt;Month&gt;/);
+  assert.doesNotMatch(html, /Loan status review<\/span> Missing/);
+
+  // Shown as fully extracted in the review queue too, not "nothing usable".
+  assert.match(html, /<strong>Requested By:<\/strong> Someone/);
+  assert.doesNotMatch(html, /Nothing usable extracted yet/);
+});
+
+test("HTML: an ok record with a NORMAL Loan Status (Submitted/Scheduled) does NOT appear in the review queue", () => {
+  const html = renderHtml(
+    [
+      {
+        sourceId: "no-dual-list-1",
+        parseStatus: "ok",
+        reviewNotes: null,
+        date: "2026-08-20",
+        fromAddress: "Someone <someone@example-welfare.test>",
+        subject: "Personal Loan Request",
+        requestedBy: "Someone",
+        amount: "LKR 30,000",
+        reason: "Home repairs.",
+        loanType: "Personal",
+        status: "Submitted",
+      },
+    ],
+    { generatedAt: "2026-09-04T00:00:00.000Z" }
+  );
+
+  // The phrase "Loan status review" legitimately appears in the section's
+  // static instructional note regardless of whether any row needs it - so
+  // check for the actual badge span specifically, not the bare phrase.
+  assert.doesNotMatch(html, /<span class="status-badge">Loan status review<\/span>/);
+  assert.match(html, /Nothing pending review\./);
+});
+
 test("a detected status persists across reruns even if a later run's fetch doesn't include the staff reply", () => {
   const ws = freshWorkspace();
   const originalEmail = {
