@@ -10,6 +10,13 @@ conservative about Stage 3 until told otherwise. See "Stage 3" section below
 for exactly what's built vs. not, and the ordered next-steps list to resume
 from.
 
+**⚠️ Also unresolved: possible public exposure of real data via `hub-push/`**
+— see the "Hub push" bullet under "What actually works right now" below.
+Real loan-requester data may currently be viewable by anyone with a link,
+with no confirmation it's actually protected. Not something to fix
+unilaterally — flag it again if the user hasn't mentioned it by the time
+this resumes.
+
 **Read this file first when resuming this task.** It's the single source of
 truth for "where did we leave off" — more current than `docs/README.md`
 (architecture/mapping reference) and `CLAUDE.md` (stable repo guidance).
@@ -80,6 +87,27 @@ automated inference.
   `Digit-Web-loan-requests` (hub_pages id 425). New slug per new page; reuse
   a slug only to update that same page. `hub-push/.env` holds a live DB
   credential — must be gitignored if this project ever becomes its own repo.
+
+  **⚠️ UNVERIFIED PUBLIC-EXPOSURE QUESTION (raised 2026-09-04, NOT
+  resolved):** this bypasses the exact safeguard Stage 4 was built around —
+  Stage 4's hard gate exists specifically because there's no app-level
+  login, so network isolation is the *only* access control, and it cannot
+  proceed until Varmen/IT confirm the server is internal-only. The hub-push
+  mechanism was already used to publish real requester data
+  (names/amounts/reasons) to a public Vercel URL
+  (`varman-aios-hub-varmens.vercel.app/view/hub_pages/Digit-Web-loan-requests`)
+  with no equivalent confirmation. Checked via WebFetch (2026-09-04): the
+  page's raw HTML shell is reachable with **no login wall** — no auth
+  redirect, no sign-in form on the initial request. However, the shell
+  itself is empty (breadcrumb only, no table markup) — it appears to be a
+  client-rendered app that loads the actual data afterward via JavaScript
+  calling an API, and WebFetch cannot execute JavaScript, so **whether the
+  real data-loading step is itself gated by auth could not be determined**.
+  **Unresolved — needs the user to check directly**: open that URL in a
+  private/incognito browser window (fully logged out) and see whether the
+  loan-request table actually populates with real data. If it does, real
+  welfare-loan data is currently publicly viewable by anyone with the link.
+  Do not push anything else via `hub-push/` until this is settled.
 
 ## Today's real-data findings and fixes (chronological — all in `PARSER_VERSION` history in `src/config.js`)
 
