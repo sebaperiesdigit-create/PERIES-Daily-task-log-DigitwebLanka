@@ -61,14 +61,30 @@ exist.** Not a wrong-database issue. So option (a) from the two choices
 below applies: `CREATE SCHEMA IF NOT EXISTS welfare` needs to be added to
 the migration DDL.
 
-**Still BLOCKED on execution** — confirming the schema is missing is not
-the same as approval to add `CREATE SCHEMA` and run the migration. **Do not
-add `CREATE SCHEMA` to the SQL, do not run `db-migrate.js`, do not attempt
-any further DB write on your own initiative** — the next step (updating
-`sql/001_create_welfare_loan_requests.sql` to add `CREATE SCHEMA IF NOT
-EXISTS welfare` ahead of the `CREATE TABLE`, then showing it for review
-before running) still needs separate explicit go-ahead, per this task's
-standing pattern.
+**SQL updated 2026-09-04, per explicit approval — still NOT run.** User
+raised a genuine safety concern first ("could this affect other DBs/files")
+— addressed directly (Postgres schemas are strictly scoped to the current
+database; CREATE SCHEMA/CREATE TABLE are additive-only; the identity check
+aborts before any write if not exactly `varmen_db`/`varmen_user`), then
+approved. `sql/001_create_welfare_loan_requests.sql` now:
+- Adds `CREATE SCHEMA IF NOT EXISTS welfare` ahead of the `CREATE TABLE`.
+- Wraps both statements in a single transaction (`BEGIN`/`COMMIT`), per
+  explicit user request — an all-or-nothing execution, nothing partially
+  applied if something fails partway through (e.g. a permissions error).
+- `src/db-migrate.js` updated to match: no longer aborts when the schema is
+  missing (that's now expected and handled by the SQL itself) — it logs
+  whether the schema already existed or will be created, purely
+  informational. Still aborts if `welfare.loan_requests` already exists.
+
+**Still BLOCKED on execution.** Updating the SQL file is not the same as
+approval to run it. **Do not run `db-migrate.js` or attempt any further DB
+write on your own initiative** — the next step (running
+`npm run db:migrate` against the real database) needs its own separate,
+explicit "run the migration" go-ahead, per this task's standing pattern.
+One open risk worth surfacing when that's asked: if `varmen_user` lacks
+`CREATE SCHEMA` privilege, the migration will fail cleanly with a
+permissions error (nothing partial applied, thanks to the transaction) —
+not something confirmable without attempting it.
 
 See the "Stage 3" section further below for the full file inventory and the
 decisions locked in during the earlier grill-me session (execution owner,

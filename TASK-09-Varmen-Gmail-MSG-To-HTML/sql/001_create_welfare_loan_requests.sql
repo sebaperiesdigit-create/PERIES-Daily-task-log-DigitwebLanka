@@ -4,13 +4,26 @@
 -- `node --env-file=.env src/db-migrate.js`, and only after:
 --   1. This exact SQL has been reviewed again, verbatim, by the user.
 --   2. The user has given the explicit "run the migration" go-ahead.
---   3. A read-only check has confirmed the `welfare` schema still exists
---      (assumed per the user's 2026-09-03 confirmation, re-verified before
---      this runs — see src/db-migrate.js).
---   4. VARMEN_EXPECTED_DB / VARMEN_EXPECTED_USER are set in .env and the
+--   3. VARMEN_EXPECTED_DB / VARMEN_EXPECTED_USER are set in .env and the
 --      identity check (src/db.js verifyIdentity) passes.
 --
--- Assumes the `welfare` schema already exists — no CREATE SCHEMA here.
+-- UPDATED 2026-09-04: the 2026-09-03 plan assumed the `welfare` schema
+-- already existed (so the original DDL deliberately had no CREATE SCHEMA).
+-- That assumption was checked and found wrong — confirmed independently
+-- two ways: this codebase's own read-only check (src/db-check.js) and the
+-- user separately verifying directly in pgAdmin, connected to the same
+-- varmen_db/varmen_user. Same database, same user — the schema genuinely
+-- doesn't exist yet, so CREATE SCHEMA IF NOT EXISTS is now included below.
+--
+-- Wrapped in a single transaction (BEGIN/COMMIT) per explicit user request,
+-- for extra safety: if anything fails partway through (e.g. a permissions
+-- error on CREATE SCHEMA), nothing partially applied is left behind — it's
+-- all-or-nothing.
+--
+-- Scope, for the record: CREATE SCHEMA/CREATE TABLE are additive only —
+-- they cannot alter or drop anything that already exists, and Postgres
+-- schemas are strictly scoped to the current database (varmen_db) — this
+-- cannot affect any other database on the same server.
 --
 -- Column set = the original 19 columns approved in the 2026-09-03 rollout
 -- plan (C:\Users\LED 269\.claude\plans\flickering-beaming-brooks.md), plus
@@ -27,6 +40,10 @@
 -- application code (src/pg-store.js, not yet built) on every upsert — no
 -- DB trigger, per explicit decision (this codebase avoids DB-side logic;
 -- everything stays visible in application code).
+
+BEGIN;
+
+CREATE SCHEMA IF NOT EXISTS welfare;
 
 CREATE TABLE welfare.loan_requests (
   source_id                   text PRIMARY KEY,
@@ -58,3 +75,5 @@ CREATE TABLE welfare.loan_requests (
   created_at                   timestamptz NOT NULL DEFAULT now(),
   updated_at                   timestamptz NOT NULL DEFAULT now()
 );
+
+COMMIT;

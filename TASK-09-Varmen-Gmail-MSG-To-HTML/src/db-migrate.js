@@ -15,9 +15,16 @@ import { withVerifiedClient, closePool } from "./db.js";
 // The identity check inside withVerifiedClient() still aborts automatically
 // if run against the wrong database/user even if this is invoked by
 // mistake — but that check is a safety net, not a substitute for asking
-// first. This script also refuses to proceed if the `welfare` schema
-// doesn't already exist, rather than assuming the 2026-09-03 confirmation
-// still holds.
+// first.
+//
+// UPDATED 2026-09-04: the `welfare` schema was confirmed missing (verified
+// two independent ways — src/db-check.js and the user directly in pgAdmin,
+// same database/user both times) — not a wrong-database issue. The SQL
+// file now includes CREATE SCHEMA IF NOT EXISTS welfare, wrapped in a
+// transaction, so this script no longer refuses to proceed when the schema
+// is absent — it logs whether the schema already existed or will be
+// created, purely informational. It still refuses to proceed if the TABLE
+// already exists, to avoid an accidental re-run.
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const sqlPath = path.join(__dirname, "..", "sql", "001_create_welfare_loan_requests.sql");
@@ -42,11 +49,11 @@ async function main() {
   console.log(sql);
 
   await withVerifiedClient(async (client) => {
-    if (!(await schemaExists(client))) {
-      throw new Error(
-        "Schema 'welfare' does not exist in this database — aborting. The migration assumes it already exists; re-confirm with Varmen/IT before proceeding."
-      );
-    }
+    console.log(
+      (await schemaExists(client))
+        ? "Schema 'welfare' already exists — CREATE SCHEMA IF NOT EXISTS will be a no-op."
+        : "Schema 'welfare' does not exist yet — will be created by this migration."
+    );
     if (await tableAlreadyExists(client)) {
       throw new Error("welfare.loan_requests already exists — aborting to avoid an accidental re-run.");
     }
