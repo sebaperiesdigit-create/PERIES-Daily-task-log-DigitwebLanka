@@ -326,6 +326,19 @@ app-level login) — `hub-push/` bypassed that entirely.
 unilateral action was taken (no credentials for the hub DB were ever used
 in this session; `hub-push/` was never run by this session).
 
+**2026-09-04, later session: pushed anyway, per explicit user override.**
+Asked to "carefully analyze the changes and push hub"; surfaced this exact
+exposure + the "do not push anything else" line above via `AskUserQuestion`
+before acting. **User's explicit answer: "just push to hub."** Ran
+`hub-push/push_to_hub.js` against the current `output/live/loan-requests.html`
+(13/13 resolved, dual-listing feature included), same slug
+`Digit-Web-loan-requests` (hub_pages id 425, updated in place, not a new
+page). **The underlying exposure is unchanged by this — the page is still
+publicly loading real requester data with no login required.** This is now
+the second explicit, in-session confirmation that pushing is acceptable
+despite the open exposure — still does not mean the exposure itself is
+resolved or decided against fixing (see the sequencing decision below).
+
 **Explicit sequencing decision (2026-09-04):** when given a 3-item recap of
 open items — (a) this exposure, (b) the Stage 3 DB pause, (c) the
 auto-update design question — **the user said: set (a) aside for now
