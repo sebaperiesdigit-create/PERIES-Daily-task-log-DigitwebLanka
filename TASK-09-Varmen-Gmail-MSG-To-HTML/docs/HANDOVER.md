@@ -1,4 +1,63 @@
-# Task 09 — Handover (last updated 2026-09-04, end of session)
+# Task 09 — Handover (last updated 2026-09-07, end of session)
+
+## ✅ 2026-09-07: `run-live.js` now runs automatically once every 24 hours (standing "ask each time" rule formally revised)
+
+Per explicit user request ("update the HTML when a new loan-request email
+arrives, is that automated?" → "yes, set it up to run every 24 hours").
+Grilled first on the actual risk before doing anything, since this directly
+overrides a rule repeated throughout this file and `CLAUDE.md` — flagged
+that explicitly via `AskUserQuestion` before proceeding. **User's explicit
+choice: full daily automation ("Yes, set it up that way"), after asking for
+a genuine recommendation.**
+
+**Why unattended daily was judged reasonably safe** (the actual reasoning
+given to the user, not just the conclusion): nothing a live run does is
+destructive or externally-visible — Gmail access stays read-only, the DB
+mirror is upsert-only (never deletes), and acknowledgement drafts stay local
+`.txt` files (Stage 5/sending still doesn't exist anywhere in this
+codebase). The only real risk is a parsing edge case going unnoticed longer
+than before, since a human isn't reviewing every run in the moment the way
+every past real-data fix (v3–v12) was actually caught.
+
+**Mitigation built in, not just claimed:** every scheduled run now appends a
+timestamped summary (record counts, ok/needs_review split, success/failure)
+to `logs/scheduled-run.log` — gitignored, counts only, no real email content
+— so the user can spot-check without watching every run live.
+
+**What was actually set up:**
+1. `scripts/run-live-scheduled.ps1` — wrapper that `cd`s to the project
+   root, runs `node --env-file=.env src/run-live.js`, and appends a
+   timestamped start/end/result block to `logs/scheduled-run.log` (creates
+   the `logs/` dir if missing). Wrapped in try/catch so a crash still gets
+   logged, not silently lost.
+2. Windows Scheduled Task **`Task09-WelfareLoanLiveSync`** registered via
+   `Register-ScheduledTask` (not raw `schtasks`, for `-StartWhenAvailable` —
+   catches up if the machine was off/asleep at the scheduled time instead of
+   silently skipping the day) — daily trigger at **9:00 AM**, 15-minute
+   execution time limit. Confirmed registered, state `Ready`.
+3. `.gitignore`: added `/logs/` (same discipline as `/data/live/` and
+   `/output/live/` — real-data-derived, local only, never committed).
+4. `CLAUDE.md`: the "never do without explicit, fresh approval each time"
+   line no longer lists `run-live.js` — replaced with an explicit dated
+   exception describing the scheduled task and why manual on-demand calls
+   are still fine to ask for/run separately from the schedule.
+5. `package.json` description updated (previously said "never scheduled" —
+   no longer true).
+
+**Not changed by this decision:** DB migrations, `gmail.send`/write scopes,
+Google Cloud settings, and printing/logging real email content are all
+still hard "ask every time" — this exception is scoped narrowly to running
+`run-live.js` itself on its existing, already-approved read-only-Gmail /
+upsert-only-DB / drafts-never-sent behavior. Do not read this as blanket
+permission to automate anything else in this codebase.
+
+**Not done as part of this — separate, still-open topic:** whether the DB
+should become the pipeline's actual read-source (vs. today's JSON-drives/
+DB-mirrors setup) was discussed the same session but intentionally left
+undecided — user asked for a recommendation, three options were laid out
+(full async cutover / docs-only / partial cutover reading HTML+hub-push from
+Postgres), and the conversation moved to the automation question before a
+choice was made. **Still fully open — do not assume an option was chosen.**
 
 ## ✅ Loan-Status-needs-review records now also listed in the review queue
 
@@ -588,11 +647,14 @@ automated inference.
   fixtures, all committed) → `output/loan-requests.html` + `output/acknowledgements/*.txt`
   (committed, synthetic data only)
 - `node --env-file=.env src/run-live.js` — **real** Gmail read-only pipeline
-  → `output/live/loan-requests.html` (gitignored, real data). **Only run this
-  when the user explicitly asks** — it's a real, if read-only, mailbox call.
-  Automatically detects backfill vs. normal mode from whether
-  `data/live/store.json` already exists — both paths are now proven against
-  real data.
+  → `output/live/loan-requests.html` (gitignored, real data) + Varmen DB
+  mirror. As of 2026-09-07, **runs automatically once every 24 hours** via
+  the `Task09-WelfareLoanLiveSync` Windows Scheduled Task
+  (`scripts/run-live-scheduled.ps1`, log at `logs/scheduled-run.log`) — see
+  the banner near the top of this file. Manual/on-demand calls (outside the
+  schedule) are still fine to run/ask for separately. Automatically detects
+  backfill vs. normal mode from whether `data/live/store.json` already
+  exists — both paths are now proven against real data.
 - Main table: 6 columns — Date, Requested By, Amount, Reason, Loan Type,
   **Loan Status** (added 2026-09-03 as "Status", header renamed to "Loan
   Status" 2026-09-04 per explicit user correction; formally revises the
@@ -798,14 +860,15 @@ new information):**
 - Do **not** print, log, or write real email content (names/amounts/reasons/
   subjects/addresses) into any committed file, including this one. Everything
   above is described in aggregate/structural terms on purpose.
-- Do **not** run `node --env-file=.env src/run-live.js` without being asked
-  each time — it's a real mailbox call, even though read-only.
 - Do **not** widen the gap-filling merge to trust staff-stated business-field
   values (e.g. a staff-mentioned loan type) — explicitly deferred 2026-09-03
   ("leave it as-is for manual review for now"). The 2026-09-04 corrections
   mechanism is a deliberate, separate, human-only path — do not blur the two.
-- Do **not** add `gmail.send`, add scheduling/cron, or change Google Cloud
-  settings — none of this exists in the codebase, intentionally.
+- Do **not** add `gmail.send`, or change Google Cloud settings — none of this
+  exists in the codebase, intentionally. (Scheduling/cron is the one
+  exception, as of 2026-09-07 — see the banner near the top of this file;
+  do not add *further* scheduling/automation beyond the one already-approved
+  daily task without a fresh, separate ask.)
 - Do **not** run `npm run db:migrate` again (the table already exists —
   `db-migrate.js` will now abort on purpose if it's re-run, per its
   table-already-exists guard).
@@ -814,9 +877,6 @@ new information):**
   2026-09-04 and live runs are actively mirroring into
   `welfare.loan_requests` (see "Stage 3" banner above) — only the user
   changes this setting.
-- Do **not** run `node --env-file=.env src/run-live.js` without being asked
-  each time (already covered above) — now doubly true, since it also
-  writes to Varmen DB, not just Gmail-read-only.
 - Do **not** delete `.env` or print its contents. DB credentials are already
   in there (`VARMEN_DB_*`), unused by any code.
 
@@ -892,3 +952,5 @@ node --env-file=.env push_to_hub.js "<full-path-to-html-file>" "<page-slug>" "<p
 | `test/gmail-fetch.test.js` | Unit tests for `buildSearchQuery`'s date-window/`"all"` logic (no live Gmail call) |
 | `test/pg-store.test.js` | Unit tests for `pg-store.js`'s pure mapping/SQL-building functions (no live DB needed) |
 | `hub-push/` | Separate, already-working publisher: pushes a finished output HTML file to the Varmen AIOS hub (own `package.json`/`node_modules`/`.env`) - see "What actually works right now" above |
+| `scripts/run-live-scheduled.ps1` | Added 2026-09-07 - wrapper the daily `Task09-WelfareLoanLiveSync` Windows Scheduled Task runs; calls `run-live.js` and appends a summary to `logs/scheduled-run.log` |
+| `logs/scheduled-run.log` | Gitignored - timestamped summary (counts only, no email content) from every scheduled run, for spot-checking |

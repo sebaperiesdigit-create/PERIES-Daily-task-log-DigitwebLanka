@@ -23,3 +23,9 @@ node_modules/
 /data/live/
 /output/live/
 
+# Daily scheduled-run summary log (record counts only, no email content) -
+# see scripts/run-live-scheduled.ps1 / the Task09-WelfareLoanLiveSync
+# scheduled task. Kept local only, same discipline as data/live and
+# output/live.
+/logs/
+

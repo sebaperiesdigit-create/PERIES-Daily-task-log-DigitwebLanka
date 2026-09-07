@@ -23,12 +23,25 @@ mode. Stage 3 (Varmen DB), Stage 4 (staff-facing web page), and Stage 5
 (actually sending) are not started. See `docs/HANDOVER.md` for the full,
 current picture — do not rely on this paragraph alone, it will go stale.
 
-**Never do without explicit, fresh approval each time:** run
-`node --env-file=.env src/run-live.js` (a real, if read-only, Gmail call) —
-touch Varmen DB in any way — add a `gmail.send`/write scope or any actual
-sending code — add scheduling/cron — change Google Cloud settings — print,
-log, or commit real email content or credentials (`.env` has real Gmail OAuth
-+ Varmen DB values; never read it back to the user or into a committed file).
+**Never do without explicit, fresh approval each time:** touch Varmen DB
+schema/migrations — add a `gmail.send`/write scope or any actual sending
+code — change Google Cloud settings — print, log, or commit real email
+content or credentials (`.env` has real Gmail OAuth + Varmen DB values;
+never read it back to the user or into a committed file).
+
+**Exception, as of 2026-09-07 (explicit user decision):** `node
+--env-file=.env src/run-live.js` no longer requires a fresh ask each time —
+a Windows Scheduled Task (`Task09-WelfareLoanLiveSync`,
+`scripts/run-live-scheduled.ps1`) now runs it unattended once every 24
+hours (Gmail read-only, Varmen DB upsert-only mirror, acknowledgement
+drafts stay local-only/never sent — nothing externally-visible or
+destructive happens automatically). Each run appends a summary to
+`logs/scheduled-run.log` (gitignored, counts only, no email content) for
+spot-checking. Do not disable this task or change its schedule/config on
+your own initiative — only the user changes this. Manual/on-demand
+`run-live.js` calls (outside the schedule) are unaffected by this and are
+still fine to run whenever asked. See `docs/HANDOVER.md` 2026-09-07 entry
+for the full decision trail.
 
 ## Task requirement (`Requirement/Task_09_requirement.txt`)
 

@@ -2,7 +2,7 @@
   "name": "welfare-loan-html-tracker",
   "version": "0.1.0",
   "private": true,
-  "description": "Task 09 - welfare loan request tracker. Demo pipeline (npm run build) uses synthetic fixtures only. Live Gmail read-only pipeline (npm run gmail:live) is a manual, deliberate command - never scheduled, never sends, never writes to Varmen DB.",
+  "description": "Task 09 - welfare loan request tracker. Demo pipeline (npm run build) uses synthetic fixtures only. Live Gmail read-only pipeline (npm run gmail:live) mirrors into Varmen DB (VARMEN_DB_MIRROR=true) and, as of 2026-09-07, also runs daily via a Windows Scheduled Task (scripts/run-live-scheduled.ps1) - never sends, drafts stay local-only.",
   "type": "module",
   "scripts": {
     "build": "node src/run.js",
